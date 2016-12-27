@@ -10,6 +10,12 @@
 #define DS4_VID 0x054C
 #define DS4_PID 0x05C4
 
+#define DS4_TOUCHPAD_W 1920
+#define DS4_TOUCHPAD_H 940
+
+#define VITA_FRONT_TOUCHSCREEN_W 1920
+#define VITA_FRONT_TOUCHSCREEN_H 1080
+
 struct ds4_input_report {
 	unsigned char report_id;
 	unsigned char left_x;
@@ -102,8 +108,10 @@ static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive_ref;
 static SceUID SceCtrl_sceCtrlPeekBufferPositive_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = -1;
-static tai_hook_ref_t SceCtrl_sceTouchPeek_ref;
-static SceUID SceCtrl_sceTouchPeek_hook_uid = -1;
+static tai_hook_ref_t SceTouch_sceTouchPeek_ref;
+static SceUID SceTouch_sceTouchPeek_hook_uid = -1;
+static tai_hook_ref_t SceTouch_sceTouchPeekRegion_ref;
+static SceUID SceTouch_sceTouchPeekRegion_hook_uid = -1;
 
 static inline void ds4_input_reset(void)
 {
@@ -248,15 +256,15 @@ static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs
 
 		if (!ds4->finger1_activelow) {
 			ktouch_data.report[0].id = ds4->finger1_id;
-			ktouch_data.report[0].x = ds4->finger1_x;
-			ktouch_data.report[0].y = ds4->finger1_y;
+			ktouch_data.report[0].x = (ds4->finger1_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
+			ktouch_data.report[0].y = (ds4->finger1_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
 			num_reports++;
 		}
 
 		if (!ds4->finger2_activelow) {
 			ktouch_data.report[1].id = ds4->finger2_id;
-			ktouch_data.report[1].x = ds4->finger2_x;
-			ktouch_data.report[1].y = ds4->finger2_y;
+			ktouch_data.report[1].x = (ds4->finger2_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
+			ktouch_data.report[1].y = (ds4->finger2_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
 			num_reports++;
 		}
 
@@ -294,13 +302,24 @@ static int SceCtrl_sceCtrlPeekBufferPositive2_hook_func(int port, SceCtrlData *p
 	return ret;
 }
 
-static int SceCtrl_sceTouchPeek_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
+static int SceTouch_sceTouchPeek_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
 {
 	int ret;
 
-	ret = TAI_CONTINUE(int, SceCtrl_sceTouchPeek_ref, port, pData, nBufs);
+	ret = TAI_CONTINUE(int, SceTouch_sceTouchPeek_ref, port, pData, nBufs);
 
-	LOG("SceCtrl_sceTouchPeek_hook_func\n");
+	if (ret >= 0 && ds4_connected) {
+		patch_touchdata(port, pData, nBufs, &ds4_input);
+	}
+
+	return ret;
+}
+
+static int SceTouch_sceTouchPeekRegion_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, int region)
+{
+	int ret;
+
+	ret = TAI_CONTINUE(int, SceTouch_sceTouchPeekRegion_ref, port, pData, nBufs, region);
 
 	if (ret >= 0 && ds4_connected) {
 		patch_touchdata(port, pData, nBufs, &ds4_input);
@@ -469,11 +488,11 @@ static int viimote_bt_thread(SceSize args, void *argp)
 
 	TEST_CALL(ksceBtRegisterCallback, bt_cb_uid, 0, 0xFFFFFFFF, 0xFFFFFFFF);
 
-#ifndef RELEASE
+/*#ifndef RELEASE
 	ksceBtStartInquiry();
 	ksceKernelDelayThreadCB(4 * 1000 * 1000);
 	ksceBtStopInquiry();
-#endif
+#endif*/
 
 	while (bt_thread_run) {
 		ksceKernelDelayThreadCB(200 * 1000);
@@ -522,9 +541,13 @@ int module_start(SceSize argc, const void *args)
 		0x15F81E8C, SceCtrl_sceCtrlPeekBufferPositive2_hook_func);
 
 	/* SceTouch hooks */
-	SceCtrl_sceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceCtrl_sceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
-		0xFF082DF0, SceCtrl_sceTouchPeek_hook_func);
+	SceTouch_sceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceTouch_sceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
+		0xFF082DF0, SceTouch_sceTouchPeek_hook_func);
+
+	SceTouch_sceTouchPeekRegion_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceTouch_sceTouchPeekRegion_ref, "SceTouch", TAI_ANY_LIBRARY,
+		0x04440622, SceTouch_sceTouchPeekRegion_hook_func);
 
 	SceKernelMemPoolCreateOpt opt;
 	opt.size = 0x1C;
@@ -568,27 +591,27 @@ int module_stop(SceSize argc, const void *args)
 	if (SceBt_sub_22999C8_hook_uid > 0) {
 		taiHookReleaseForKernel(SceBt_sub_22999C8_hook_uid,
 			SceBt_sub_22999C8_ref);
-		LOG("Unhooked SceBt_sub_22999C8\n");
 	}
 
 	if (SceCtrl_sceCtrlPeekBufferPositive_hook_uid > 0) {
 		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositive_hook_uid,
 			SceCtrl_sceCtrlPeekBufferPositive_ref);
-		LOG("Unhooked SceCtrl_sceCtrlPeekBufferPositive\n");
 	}
 
 	if (SceCtrl_sceCtrlPeekBufferPositive2_hook_uid > 0) {
 		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositive2_hook_uid,
 			SceCtrl_sceCtrlPeekBufferPositive2_ref);
-		LOG("Unhooked SceCtrl_sceCtrlPeekBufferPositive2\n");
 	}
 
-	if (SceCtrl_sceTouchPeek_hook_uid > 0) {
-		taiHookReleaseForKernel(SceCtrl_sceTouchPeek_hook_uid,
-			SceCtrl_sceTouchPeek_ref);
-		LOG("Unhooked SceCtrl_sceTouchPeek\n");
+	if (SceTouch_sceTouchPeek_hook_uid > 0) {
+		taiHookReleaseForKernel(SceTouch_sceTouchPeek_hook_uid,
+			SceTouch_sceTouchPeek_ref);
 	}
 
+	if (SceTouch_sceTouchPeekRegion_hook_uid > 0) {
+		taiHookReleaseForKernel(SceTouch_sceTouchPeekRegion_hook_uid,
+			SceTouch_sceTouchPeekRegion_ref);
+	}
 
 	log_flush();
 
