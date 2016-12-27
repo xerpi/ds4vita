@@ -12,9 +12,12 @@
 
 #define DS4_TOUCHPAD_W 1920
 #define DS4_TOUCHPAD_H 940
+#define DS4_ANALOG_THRESHOLD 5
 
 #define VITA_FRONT_TOUCHSCREEN_W 1920
 #define VITA_FRONT_TOUCHSCREEN_H 1080
+
+#define abs(x) ((x < 0) ? -(x) : (x))
 
 struct ds4_input_report {
 	unsigned char report_id;
@@ -222,19 +225,25 @@ static void patch_ctrldata_positive(SceCtrlData *pad_data, int count,
 			kpad_data.buttons |= SCE_CTRL_LEFT;
 
 		if (ds4->l1)
-			kpad_data.buttons |= SCE_CTRL_L1;
+			kpad_data.buttons |= (SCE_CTRL_L1 | SCE_CTRL_LTRIGGER);
 		if (ds4->r1)
-			kpad_data.buttons |= SCE_CTRL_R1;
+			kpad_data.buttons |= (SCE_CTRL_R1 | SCE_CTRL_RTRIGGER);
 
 		if (ds4->share)
 			kpad_data.buttons |= SCE_CTRL_SELECT;
 		if (ds4->options)
 			kpad_data.buttons |= SCE_CTRL_START;
+		if (ds4->ps)
+			kpad_data.buttons |= SCE_CTRL_INTERCEPTED;
 
-		kpad_data.lx = ds4->left_x;
-		kpad_data.ly = ds4->left_y;
-		kpad_data.rx = ds4->right_x;
-		kpad_data.ry = ds4->right_y;
+		if (abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD)
+			kpad_data.lx = ds4->left_x;
+		if (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD)
+			kpad_data.ly = ds4->left_y;
+		if (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD)
+			kpad_data.rx = ds4->right_x;
+		if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)
+			kpad_data.ry = ds4->right_y;
 
 		ksceKernelMemcpyKernelToUser((uintptr_t)upad_data, &kpad_data, sizeof(kpad_data));
 
@@ -268,7 +277,8 @@ static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs
 			num_reports++;
 		}
 
-		ktouch_data.reportNum = num_reports;
+		if (num_reports > 0)
+			ktouch_data.reportNum = num_reports;
 
 		ksceKernelMemcpyKernelToUser((uintptr_t)utouch_data, &ktouch_data, sizeof(ktouch_data));
 
