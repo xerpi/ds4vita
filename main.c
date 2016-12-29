@@ -228,9 +228,9 @@ static void patch_ctrldata_positive(SceCtrlData *pad_data, int count,
 		if (ds4->dpad == 5 || ds4->dpad == 6 || ds4->dpad == 7)
 			kpad_data.buttons |= SCE_CTRL_LEFT;
 
-		if (ds4->l1)
+		if (ds4->l1 || ds4->l2)
 			kpad_data.buttons |= (SCE_CTRL_L1 | SCE_CTRL_LTRIGGER);
-		if (ds4->r1)
+		if (ds4->r1 || ds4->r2)
 			kpad_data.buttons |= (SCE_CTRL_R1 | SCE_CTRL_RTRIGGER);
 
 		if (ds4->share)
@@ -433,7 +433,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 		 * If we get an event with a MAC, and the MAC is different
 		 * from the connected DS4, skip the event.
 		 */
-		if (ds4_connected && hid_event.mac0 != 0 && hid_event.mac1 != 0) {
+		if (ds4_connected) {
 			if (hid_event.mac0 != ds4_mac0 || hid_event.mac1 != ds4_mac1)
 				continue;
 		}
@@ -521,9 +521,9 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 	return 0;
 }
 
-static int viimote_bt_thread(SceSize args, void *argp)
+static int ds4vita_bt_thread(SceSize args, void *argp)
 {
-	bt_cb_uid = ksceKernelCreateCallback("kbluetooth_callback", 0, bt_cb_func, NULL);
+	bt_cb_uid = ksceKernelCreateCallback("ds4vita_bt_callback", 0, bt_cb_func, NULL);
 	LOG("Bluetooth callback UID: 0x%08X\n", bt_cb_uid);
 
 	TEST_CALL(ksceBtRegisterCallback, bt_cb_uid, 0, 0xFFFFFFFF, 0xFFFFFFFF);
@@ -606,11 +606,11 @@ int module_start(SceSize argc, const void *args)
 	opt.field_14 = 0;
 	opt.field_18 = 0;
 
-	bt_mempool_uid = ksceKernelMemPoolCreate("viimote_mempool", 0x7000, &opt);
+	bt_mempool_uid = ksceKernelMemPoolCreate("ds4vita_mempool", 0x100, &opt);
 	LOG("Bluetooth mempool UID: 0x%08X\n", bt_mempool_uid);
 
-	bt_thread_uid = ksceKernelCreateThread("viimote_vt_thread", viimote_bt_thread,
-		0x3C, 0x2000, 0, 0x10000, 0);
+	bt_thread_uid = ksceKernelCreateThread("ds4vita_bt_thread", ds4vita_bt_thread,
+		0x3C, 0x1000, 0, 0x10000, 0);
 	LOG("Bluetooth thread UID: 0x%08X\n", bt_thread_uid);
 	ksceKernelStartThread(bt_thread_uid, 0, NULL);
 
