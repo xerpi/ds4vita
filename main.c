@@ -7,6 +7,8 @@
 #include <taihen.h>
 #include "log.h"
 
+extern int ksceKernelResetAutoSuspendTimer(int);
+
 #define DS4_VID 0x054C
 #define DS4_PID 0x05C4
 
@@ -207,8 +209,12 @@ static void patch_ctrldata_positive(SceCtrlData *pad_data, int count,
 
 	for (i = 0; i < count; i++) {
 		SceCtrlData kpad_data;
+		unsigned int orig_buttons;
+		int js_moved = 0;
 
 		ksceKernelMemcpyUserToKernel(&kpad_data, (uintptr_t)upad_data, sizeof(kpad_data));
+
+		orig_buttons = kpad_data.buttons;
 
 		if (ds4->cross)
 			kpad_data.buttons |= SCE_CTRL_CROSS;
@@ -240,14 +246,25 @@ static void patch_ctrldata_positive(SceCtrlData *pad_data, int count,
 		if (ds4->ps)
 			kpad_data.buttons |= SCE_CTRL_INTERCEPTED;
 
-		if (abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD)
+		if (abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD) {
 			kpad_data.lx = ds4->left_x;
-		if (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD)
+			js_moved = 1;
+		}
+		if (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD) {
 			kpad_data.ly = ds4->left_y;
-		if (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD)
+			js_moved = 1;
+		}
+		if (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD) {
 			kpad_data.rx = ds4->right_x;
-		if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)
+			js_moved = 1;
+		}
+		if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD) {
 			kpad_data.ry = ds4->right_y;
+			js_moved = 1;
+		}
+
+		if ((orig_buttons ^ kpad_data.buttons) || js_moved)
+			ksceKernelResetAutoSuspendTimer(0);
 
 		ksceKernelMemcpyKernelToUser((uintptr_t)upad_data, &kpad_data, sizeof(kpad_data));
 
@@ -281,8 +298,10 @@ static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs
 			num_reports++;
 		}
 
-		if (num_reports > 0)
+		if (num_reports > 0) {
+			ksceKernelResetAutoSuspendTimer(0);
 			ktouch_data.reportNum = num_reports;
+		}
 
 		ksceKernelMemcpyKernelToUser((uintptr_t)utouch_data, &ktouch_data, sizeof(ktouch_data));
 
