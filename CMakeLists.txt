@@ -36,6 +36,7 @@ target_link_libraries(${PROJECT_NAME}.elf
 	SceIofilemgrForDriver_stub
 	SceBtForDriver_stub
 	SceKernelSuspendForDriver_stub
+	SceCtrlForDriver_stub
 )
 
 set_target_properties(${PROJECT_NAME}.elf

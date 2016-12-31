@@ -2,12 +2,12 @@
 #include <psp2kern/kernel/threadmgr.h>
 #include <psp2kern/kernel/sysmem.h>
 #include <psp2kern/bt.h>
-#include <psp2/ctrl.h>
+#include <psp2kern/ctrl.h>
 #include <psp2/touch.h>
 #include <taihen.h>
 #include "log.h"
 
-extern int ksceKernelResetAutoSuspendTimer(int);
+extern int ksceKernelPowerTick(int);
 
 #define DS4_VID 0x054C
 #define DS4_PID 0x05C4
@@ -109,14 +109,6 @@ static struct ds4_input_report ds4_input;
 
 static tai_hook_ref_t SceBt_sub_22999C8_ref;
 static SceUID SceBt_sub_22999C8_hook_uid = -1;
-static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive_ref;
-static SceUID SceCtrl_sceCtrlPeekBufferPositive_hook_uid = -1;
-static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive2_ref;
-static SceUID SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = -1;
-static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositive_ref;
-static SceUID SceCtrl_sceCtrlReadBufferPositive_hook_uid = -1;
-static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositive2_ref;
-static SceUID SceCtrl_sceCtrlReadBufferPositive2_hook_uid = -1;
 static tai_hook_ref_t SceTouch_sceTouchPeek_ref;
 static SceUID SceTouch_sceTouchPeek_hook_uid = -1;
 static tai_hook_ref_t SceTouch_sceTouchPeekRegion_ref;
@@ -201,75 +193,55 @@ static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
 	return 0;
 }
 
-static void patch_ctrldata_positive(SceCtrlData *pad_data, int count,
-				    struct ds4_input_report *ds4)
+static void set_input_emulation(struct ds4_input_report *ds4)
 {
-	int i;
-	SceCtrlData *upad_data = pad_data;
+	unsigned int buttons = 0;
+	int js_moved = 0;
 
-	for (i = 0; i < count; i++) {
-		SceCtrlData kpad_data;
-		unsigned int orig_buttons;
-		int js_moved = 0;
+	if (ds4->cross)
+		buttons |= SCE_CTRL_CROSS;
+	if (ds4->circle)
+		buttons |= SCE_CTRL_CIRCLE;
+	if (ds4->triangle)
+		buttons |= SCE_CTRL_TRIANGLE;
+	if (ds4->square)
+		buttons |= SCE_CTRL_SQUARE;
 
-		ksceKernelMemcpyUserToKernel(&kpad_data, (uintptr_t)upad_data, sizeof(kpad_data));
+	if (ds4->dpad == 0 || ds4->dpad == 1 || ds4->dpad == 7)
+		buttons |= SCE_CTRL_UP;
+	if (ds4->dpad == 1 || ds4->dpad == 2 || ds4->dpad == 3)
+		buttons |= SCE_CTRL_RIGHT;
+	if (ds4->dpad == 3 || ds4->dpad == 4 || ds4->dpad == 5)
+		buttons |= SCE_CTRL_DOWN;
+	if (ds4->dpad == 5 || ds4->dpad == 6 || ds4->dpad == 7)
+		buttons |= SCE_CTRL_LEFT;
 
-		orig_buttons = kpad_data.buttons;
+	if (ds4->l1 || ds4->l2)
+		buttons |= (SCE_CTRL_L1 | SCE_CTRL_LTRIGGER);
+	if (ds4->r1 || ds4->r2)
+		buttons |= (SCE_CTRL_R1 | SCE_CTRL_RTRIGGER);
 
-		if (ds4->cross)
-			kpad_data.buttons |= SCE_CTRL_CROSS;
-		if (ds4->circle)
-			kpad_data.buttons |= SCE_CTRL_CIRCLE;
-		if (ds4->triangle)
-			kpad_data.buttons |= SCE_CTRL_TRIANGLE;
-		if (ds4->square)
-			kpad_data.buttons |= SCE_CTRL_SQUARE;
+	if (ds4->share)
+		buttons |= SCE_CTRL_SELECT;
+	if (ds4->options)
+		buttons |= SCE_CTRL_START;
+	if (ds4->ps)
+		buttons |= SCE_CTRL_INTERCEPTED;
 
-		if (ds4->dpad == 0 || ds4->dpad == 1 || ds4->dpad == 7)
-			kpad_data.buttons |= SCE_CTRL_UP;
-		if (ds4->dpad == 1 || ds4->dpad == 2 || ds4->dpad == 3)
-			kpad_data.buttons |= SCE_CTRL_RIGHT;
-		if (ds4->dpad == 3 || ds4->dpad == 4 || ds4->dpad == 5)
-			kpad_data.buttons |= SCE_CTRL_DOWN;
-		if (ds4->dpad == 5 || ds4->dpad == 6 || ds4->dpad == 7)
-			kpad_data.buttons |= SCE_CTRL_LEFT;
-
-		if (ds4->l1 || ds4->l2)
-			kpad_data.buttons |= (SCE_CTRL_L1 | SCE_CTRL_LTRIGGER);
-		if (ds4->r1 || ds4->r2)
-			kpad_data.buttons |= (SCE_CTRL_R1 | SCE_CTRL_RTRIGGER);
-
-		if (ds4->share)
-			kpad_data.buttons |= SCE_CTRL_SELECT;
-		if (ds4->options)
-			kpad_data.buttons |= SCE_CTRL_START;
-		if (ds4->ps)
-			kpad_data.buttons |= SCE_CTRL_INTERCEPTED;
-
-		if (abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD) {
-			kpad_data.lx = ds4->left_x;
-			js_moved = 1;
-		}
-		if (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD) {
-			kpad_data.ly = ds4->left_y;
-			js_moved = 1;
-		}
-		if (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD) {
-			kpad_data.rx = ds4->right_x;
-			js_moved = 1;
-		}
-		if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD) {
-			kpad_data.ry = ds4->right_y;
-			js_moved = 1;
-		}
-
-		if ((orig_buttons ^ kpad_data.buttons) || js_moved)
-			ksceKernelResetAutoSuspendTimer(0);
-
-		ksceKernelMemcpyKernelToUser((uintptr_t)upad_data, &kpad_data, sizeof(kpad_data));
-
-		upad_data++;
+	if ((abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD) ||
+	    (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD) ||
+	    (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD) ||
+	    (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)) {
+		js_moved = 1;
 	}
+
+	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 63);
+
+	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
+		ds4->right_x, ds4->right_x, 0, 0, 0, 0);
+
+	if (buttons != 0 || js_moved)
+		ksceKernelPowerTick(0);
 }
 
 static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs,
@@ -299,7 +271,7 @@ static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs
 		}
 
 		if (num_reports > 0) {
-			ksceKernelResetAutoSuspendTimer(0);
+			ksceKernelPowerTick(0);
 			ktouch_data.reportNum = num_reports;
 		}
 
@@ -307,58 +279,6 @@ static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs
 
 		utouch_data++;
 	}
-}
-
-static int SceCtrl_sceCtrlPeekBufferPositive_hook_func(int port, SceCtrlData *pad_data, int count)
-{
-	int ret;
-
-	ret = TAI_CONTINUE(int, SceCtrl_sceCtrlPeekBufferPositive_ref, port, pad_data, count);
-
-	if (ret >= 0 && ds4_connected) {
-		patch_ctrldata_positive(pad_data, count, &ds4_input);
-	}
-
-	return ret;
-}
-
-static int SceCtrl_sceCtrlPeekBufferPositive2_hook_func(int port, SceCtrlData *pad_data, int count)
-{
-	int ret;
-
-	ret = TAI_CONTINUE(int, SceCtrl_sceCtrlPeekBufferPositive2_ref, port, pad_data, count);
-
-	if (ret >= 0 && ds4_connected) {
-		patch_ctrldata_positive(pad_data, count, &ds4_input);
-	}
-
-	return ret;
-}
-
-static int SceCtrl_sceCtrlReadBufferPositive_hook_func(int port, SceCtrlData *pad_data, int count)
-{
-	int ret;
-
-	ret = TAI_CONTINUE(int, SceCtrl_sceCtrlReadBufferPositive_ref, port, pad_data, count);
-
-	if (ret >= 0 && ds4_connected) {
-		patch_ctrldata_positive(pad_data, count, &ds4_input);
-	}
-
-	return ret;
-}
-
-static int SceCtrl_sceCtrlReadBufferPositive2_hook_func(int port, SceCtrlData *pad_data, int count)
-{
-	int ret;
-
-	ret = TAI_CONTINUE(int, SceCtrl_sceCtrlReadBufferPositive2_ref, port, pad_data, count);
-
-	if (ret >= 0 && ds4_connected) {
-		patch_ctrldata_positive(pad_data, count, &ds4_input);
-	}
-
-	return ret;
 }
 
 static int SceTouch_sceTouchPeek_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
@@ -515,6 +435,8 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 			case 0x11:
 				memcpy(&ds4_input, recv_buff, sizeof(ds4_input));
 
+				set_input_emulation(&ds4_input);
+
 				enqueue_read_request(hid_event.mac0, hid_event.mac1,
 					&hid_request, recv_buff, sizeof(recv_buff));
 				break;
@@ -590,23 +512,6 @@ int module_start(SceSize argc, const void *args)
 		&SceBt_sub_22999C8_ref, SceBt_modinfo.modid, 0,
 		0x22999C8 - 0x2280000, 1, SceBt_sub_22999C8_hook_func);
 
-	/* SceCtrl hooks */
-	SceCtrl_sceCtrlPeekBufferPositive_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceCtrl_sceCtrlPeekBufferPositive_ref, "SceCtrl", TAI_ANY_LIBRARY,
-		0xA9C3CED6, SceCtrl_sceCtrlPeekBufferPositive_hook_func);
-
-	SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceCtrl_sceCtrlPeekBufferPositive2_ref, "SceCtrl", TAI_ANY_LIBRARY,
-		0x15F81E8C, SceCtrl_sceCtrlPeekBufferPositive2_hook_func);
-
-	SceCtrl_sceCtrlReadBufferPositive_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceCtrl_sceCtrlReadBufferPositive_ref, "SceCtrl", TAI_ANY_LIBRARY,
-		0x67E7AB83, SceCtrl_sceCtrlReadBufferPositive_hook_func);
-
-	SceCtrl_sceCtrlReadBufferPositive2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceCtrl_sceCtrlReadBufferPositive2_ref, "SceCtrl", TAI_ANY_LIBRARY,
-		0xC4226A3E, SceCtrl_sceCtrlReadBufferPositive2_hook_func);
-
 	/* SceTouch hooks */
 	SceTouch_sceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
 		&SceTouch_sceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
@@ -658,26 +563,6 @@ int module_stop(SceSize argc, const void *args)
 	if (SceBt_sub_22999C8_hook_uid > 0) {
 		taiHookReleaseForKernel(SceBt_sub_22999C8_hook_uid,
 			SceBt_sub_22999C8_ref);
-	}
-
-	if (SceCtrl_sceCtrlPeekBufferPositive_hook_uid > 0) {
-		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositive_hook_uid,
-			SceCtrl_sceCtrlPeekBufferPositive_ref);
-	}
-
-	if (SceCtrl_sceCtrlPeekBufferPositive2_hook_uid > 0) {
-		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositive2_hook_uid,
-			SceCtrl_sceCtrlPeekBufferPositive2_ref);
-	}
-
-	if (SceCtrl_sceCtrlReadBufferPositive_hook_uid > 0) {
-		taiHookReleaseForKernel(SceCtrl_sceCtrlReadBufferPositive_hook_uid,
-			SceCtrl_sceCtrlReadBufferPositive_ref);
-	}
-
-	if (SceCtrl_sceCtrlReadBufferPositive2_hook_uid > 0) {
-		taiHookReleaseForKernel(SceCtrl_sceCtrlReadBufferPositive2_hook_uid,
-			SceCtrl_sceCtrlReadBufferPositive2_ref);
 	}
 
 	if (SceTouch_sceTouchPeek_hook_uid > 0) {
