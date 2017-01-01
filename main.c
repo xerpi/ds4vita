@@ -193,6 +193,13 @@ static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
 	return 0;
 }
 
+static void reset_input_emulation()
+{
+	ksceCtrlSetButtonEmulation(0, 0, 0, 0, 32);
+	ksceCtrlSetAnalogEmulation(0, 0, 0x80, 0x80, 0x80, 0x80,
+		0x80, 0x80, 0x80, 0x80, 0);
+}
+
 static void set_input_emulation(struct ds4_input_report *ds4)
 {
 	unsigned int buttons = 0;
@@ -235,10 +242,10 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 		js_moved = 1;
 	}
 
-	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 63);
+	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 32);
 
 	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
-		ds4->right_x, ds4->right_x, 0, 0, 0, 0);
+		ds4->right_x, ds4->right_x, 0, 0, 0, 0, 32);
 
 	if (buttons != 0 || js_moved)
 		ksceKernelPowerTick(0);
@@ -412,6 +419,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 
 		case 0x06: /* Device disconnect event*/
 			ds4_connected = 0;
+			reset_input_emulation();
 			break;
 
 		case 0x08: /* Connection requested event */
@@ -479,8 +487,10 @@ static int ds4vita_bt_thread(SceSize args, void *argp)
 		ksceKernelDelayThreadCB(200 * 1000);
 	}
 
-	if (ds4_connected)
+	if (ds4_connected) {
 		ksceBtStartDisconnect(ds4_mac0, ds4_mac1);
+		reset_input_emulation();
+	}
 
 	ksceBtUnregisterCallback(bt_cb_uid);
 
