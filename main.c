@@ -19,7 +19,7 @@ extern int ksceKernelPowerTick(int);
 #define VITA_FRONT_TOUCHSCREEN_W 1920
 #define VITA_FRONT_TOUCHSCREEN_H 1080
 
-#define abs(x) ((x < 0) ? -(x) : (x))
+#define abs(x) (((x) < 0) ? -(x) : (x))
 
 struct ds4_input_report {
 	unsigned char report_id;
@@ -245,7 +245,7 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 32);
 
 	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
-		ds4->right_x, ds4->right_x, 0, 0, 0, 0, 32);
+		ds4->right_x, ds4->right_y, 0, 0, 0, 0, 32);
 
 	if (buttons != 0 || js_moved)
 		ksceKernelPowerTick(0);
