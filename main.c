@@ -433,13 +433,19 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 			ksceBtReplyUserConfirmation(hid_event.mac0, hid_event.mac1, 1);
 			break;
 
-		case 0x05: /* Connection accepted event */
-			ds4_input_reset();
-			ds4_mac0 = hid_event.mac0;
-			ds4_mac1 = hid_event.mac1;
-			ds4_connected = 1;
-			ds4_send_0x11_report(hid_event.mac0, hid_event.mac1);
+		case 0x05: { /* Connection accepted event */
+			unsigned short vid_pid[2];
+			ksceBtGetVidPid(hid_event.mac0, hid_event.mac1, vid_pid);
+
+			if (is_ds4(vid_pid)) {
+				ds4_input_reset();
+				ds4_mac0 = hid_event.mac0;
+				ds4_mac1 = hid_event.mac1;
+				ds4_connected = 1;
+				ds4_send_0x11_report(hid_event.mac0, hid_event.mac1);
+			}
 			break;
+		}
 
 
 		case 0x06: /* Device disconnect event*/
