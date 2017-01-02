@@ -109,10 +109,14 @@ static struct ds4_input_report ds4_input;
 
 static tai_hook_ref_t SceBt_sub_22999C8_ref;
 static SceUID SceBt_sub_22999C8_hook_uid = -1;
-static tai_hook_ref_t SceTouch_sceTouchPeek_ref;
-static SceUID SceTouch_sceTouchPeek_hook_uid = -1;
-static tai_hook_ref_t SceTouch_sceTouchPeekRegion_ref;
-static SceUID SceTouch_sceTouchPeekRegion_hook_uid = -1;
+static tai_hook_ref_t SceTouch_ksceTouchPeek_ref;
+static SceUID SceTouch_ksceTouchPeek_hook_uid = -1;
+static tai_hook_ref_t SceTouch_ksceTouchPeekRegion_ref;
+static SceUID SceTouch_ksceTouchPeekRegion_hook_uid = -1;
+static tai_hook_ref_t SceTouch_ksceTouchRead_ref;
+static SceUID SceTouch_ksceTouchRead_hook_uid = -1;
+static tai_hook_ref_t SceTouch_ksceTouchReadRegion_ref;
+static SceUID SceTouch_ksceTouchReadRegion_hook_uid = -1;
 
 static inline void ds4_input_reset(void)
 {
@@ -255,45 +259,39 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 static void patch_touchdata(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs,
 			    struct ds4_input_report *ds4)
 {
-	int i;
-	SceTouchData *utouch_data = pData;
+	unsigned int i;
 
 	for (i = 0; i < nBufs; i++) {
-		SceTouchData ktouch_data;
-		int num_reports = 0;
-
-		ksceKernelMemcpyUserToKernel(&ktouch_data, (uintptr_t)utouch_data, sizeof(ktouch_data));
+		unsigned int num_reports = 0;
 
 		if (!ds4->finger1_activelow) {
-			ktouch_data.report[0].id = ds4->finger1_id;
-			ktouch_data.report[0].x = (ds4->finger1_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
-			ktouch_data.report[0].y = (ds4->finger1_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
+			pData->report[0].id = ds4->finger1_id;
+			pData->report[0].x = (ds4->finger1_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
+			pData->report[0].y = (ds4->finger1_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
 			num_reports++;
 		}
 
 		if (!ds4->finger2_activelow) {
-			ktouch_data.report[1].id = ds4->finger2_id;
-			ktouch_data.report[1].x = (ds4->finger2_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
-			ktouch_data.report[1].y = (ds4->finger2_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
+			pData->report[1].id = ds4->finger2_id;
+			pData->report[1].x = (ds4->finger2_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
+			pData->report[1].y = (ds4->finger2_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
 			num_reports++;
 		}
 
 		if (num_reports > 0) {
 			ksceKernelPowerTick(0);
-			ktouch_data.reportNum = num_reports;
+			pData->reportNum = num_reports;
 		}
 
-		ksceKernelMemcpyKernelToUser((uintptr_t)utouch_data, &ktouch_data, sizeof(ktouch_data));
-
-		utouch_data++;
+		pData++;
 	}
 }
 
-static int SceTouch_sceTouchPeek_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
+static int SceTouch_ksceTouchPeek_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
 {
 	int ret;
 
-	ret = TAI_CONTINUE(int, SceTouch_sceTouchPeek_ref, port, pData, nBufs);
+	ret = TAI_CONTINUE(int, SceTouch_ksceTouchPeek_ref, port, pData, nBufs);
 
 	if (ret >= 0 && ds4_connected) {
 		patch_touchdata(port, pData, nBufs, &ds4_input);
@@ -302,11 +300,37 @@ static int SceTouch_sceTouchPeek_hook_func(SceUInt32 port, SceTouchData *pData, 
 	return ret;
 }
 
-static int SceTouch_sceTouchPeekRegion_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, int region)
+static int SceTouch_ksceTouchPeekRegion_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, int region)
 {
 	int ret;
 
-	ret = TAI_CONTINUE(int, SceTouch_sceTouchPeekRegion_ref, port, pData, nBufs, region);
+	ret = TAI_CONTINUE(int, SceTouch_ksceTouchPeekRegion_ref, port, pData, nBufs, region);
+
+	if (ret >= 0 && ds4_connected) {
+		patch_touchdata(port, pData, nBufs, &ds4_input);
+	}
+
+	return ret;
+}
+
+static int SceTouch_ksceTouchRead_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
+{
+	int ret;
+
+	ret = TAI_CONTINUE(int, SceTouch_ksceTouchRead_ref, port, pData, nBufs);
+
+	if (ret >= 0 && ds4_connected) {
+		patch_touchdata(port, pData, nBufs, &ds4_input);
+	}
+
+	return ret;
+}
+
+static int SceTouch_ksceTouchReadRegion_hook_func(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, int region)
+{
+	int ret;
+
+	ret = TAI_CONTINUE(int, SceTouch_ksceTouchReadRegion_ref, port, pData, nBufs, region);
 
 	if (ret >= 0 && ds4_connected) {
 		patch_touchdata(port, pData, nBufs, &ds4_input);
@@ -474,9 +498,8 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 static int ds4vita_bt_thread(SceSize args, void *argp)
 {
 	bt_cb_uid = ksceKernelCreateCallback("ds4vita_bt_callback", 0, bt_cb_func, NULL);
-	LOG("Bluetooth callback UID: 0x%08X\n", bt_cb_uid);
 
-	TEST_CALL(ksceBtRegisterCallback, bt_cb_uid, 0, 0xFFFFFFFF, 0xFFFFFFFF);
+	ksceBtRegisterCallback(bt_cb_uid, 0, 0xFFFFFFFF, 0xFFFFFFFF);
 
 /*#ifndef RELEASE
 	ksceBtStartInquiry();
@@ -524,13 +547,21 @@ int module_start(SceSize argc, const void *args)
 		0x22999C8 - 0x2280000, 1, SceBt_sub_22999C8_hook_func);
 
 	/* SceTouch hooks */
-	SceTouch_sceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceTouch_sceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
-		0xFF082DF0, SceTouch_sceTouchPeek_hook_func);
+	SceTouch_ksceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceTouch_ksceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
+		0xBAD1960B, SceTouch_ksceTouchPeek_hook_func);
 
-	SceTouch_sceTouchPeekRegion_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
-		&SceTouch_sceTouchPeekRegion_ref, "SceTouch", TAI_ANY_LIBRARY,
-		0x04440622, SceTouch_sceTouchPeekRegion_hook_func);
+	SceTouch_ksceTouchPeekRegion_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceTouch_ksceTouchPeekRegion_ref, "SceTouch", TAI_ANY_LIBRARY,
+		0x9B3F7207, SceTouch_ksceTouchPeekRegion_hook_func);
+
+	SceTouch_ksceTouchRead_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceTouch_ksceTouchRead_ref, "SceTouch", TAI_ANY_LIBRARY,
+		0x70C8AACE, SceTouch_ksceTouchRead_hook_func);
+
+	SceTouch_ksceTouchReadRegion_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceTouch_ksceTouchReadRegion_ref, "SceTouch", TAI_ANY_LIBRARY,
+		0x9A91F624, SceTouch_ksceTouchReadRegion_hook_func);
 
 	SceKernelMemPoolCreateOpt opt;
 	opt.size = 0x1C;
@@ -576,14 +607,24 @@ int module_stop(SceSize argc, const void *args)
 			SceBt_sub_22999C8_ref);
 	}
 
-	if (SceTouch_sceTouchPeek_hook_uid > 0) {
-		taiHookReleaseForKernel(SceTouch_sceTouchPeek_hook_uid,
-			SceTouch_sceTouchPeek_ref);
+	if (SceTouch_ksceTouchPeek_hook_uid > 0) {
+		taiHookReleaseForKernel(SceTouch_ksceTouchPeek_hook_uid,
+			SceTouch_ksceTouchPeek_ref);
 	}
 
-	if (SceTouch_sceTouchPeekRegion_hook_uid > 0) {
-		taiHookReleaseForKernel(SceTouch_sceTouchPeekRegion_hook_uid,
-			SceTouch_sceTouchPeekRegion_ref);
+	if (SceTouch_ksceTouchPeekRegion_hook_uid > 0) {
+		taiHookReleaseForKernel(SceTouch_ksceTouchPeekRegion_hook_uid,
+			SceTouch_ksceTouchPeekRegion_ref);
+	}
+
+	if (SceTouch_ksceTouchRead_hook_uid > 0) {
+		taiHookReleaseForKernel(SceTouch_ksceTouchRead_hook_uid,
+			SceTouch_ksceTouchRead_ref);
+	}
+
+	if (SceTouch_ksceTouchReadRegion_hook_uid > 0) {
+		taiHookReleaseForKernel(SceTouch_ksceTouchReadRegion_hook_uid,
+			SceTouch_ksceTouchReadRegion_ref);
 	}
 
 	log_flush();
