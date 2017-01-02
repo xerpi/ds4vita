@@ -245,7 +245,8 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 32);
 
 	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
-		ds4->right_x, ds4->right_y, 0, 0, 0, 0, 32);
+		ds4->right_x, ds4->right_y, ds4->left_x, ds4->left_y,
+		ds4->right_x, ds4->right_y, 32);
 
 	if (buttons != 0 || js_moved)
 		ksceKernelPowerTick(0);
