@@ -4,6 +4,7 @@
 #include <psp2kern/bt.h>
 #include <psp2kern/ctrl.h>
 #include <psp2/touch.h>
+#include <psp2/motion.h>
 #include <taihen.h>
 #include "log.h"
 
@@ -117,6 +118,8 @@ static tai_hook_ref_t SceTouch_ksceTouchRead_ref;
 static SceUID SceTouch_ksceTouchRead_hook_uid = -1;
 static tai_hook_ref_t SceTouch_ksceTouchReadRegion_ref;
 static SceUID SceTouch_ksceTouchReadRegion_hook_uid = -1;
+static tai_hook_ref_t SceMotion_sceMotionGetState_ref;
+static SceUID SceMotion_sceMotionGetState_hook_uid = -1;
 
 static inline void ds4_input_reset(void)
 {
@@ -336,6 +339,28 @@ static int SceTouch_ksceTouchReadRegion_hook_func(SceUInt32 port, SceTouchData *
 		patch_touchdata(port, pData, nBufs, &ds4_input);
 	}
 
+	return ret;
+}
+
+static void patch_motion_state(SceMotionState *motionState, struct ds4_input_report *ds4){
+	SceMotionState *u_data = motionState;
+	SceMotionState k_data;
+	ksceKernelMemcpyUserToKernel(&k_data, (uintptr_t)u_data, sizeof(k_data));
+	k_data.acceleration.x = ds4->accel_x;
+	k_data.acceleration.y = ds4->accel_y;
+	k_data.acceleration.y = ds4->accel_z;
+	ksceKernelMemcpyKernelToUser((uintptr_t)u_data, &k_data, sizeof(k_data));
+}
+
+static int SceMotion_sceMotionGetState_hook_func(SceMotionState *motionState){
+	int ret;
+	
+	ret = TAI_CONTINUE(int, SceMotion_sceMotionGetState_ref, motionState);
+	
+	if (ret >= 0 && ds4_connected) {
+		patch_motion_state(motionState, &ds4_input);
+	}
+	
 	return ret;
 }
 
@@ -569,6 +594,10 @@ int module_start(SceSize argc, const void *args)
 		&SceTouch_ksceTouchReadRegion_ref, "SceTouch", TAI_ANY_LIBRARY,
 		0x9A91F624, SceTouch_ksceTouchReadRegion_hook_func);
 
+	SceMotion_sceMotionGetState_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceMotion_sceMotionGetState_ref, "SceMotion", TAI_ANY_LIBRARY,
+		0xBDB32767, SceMotion_sceMotionGetState_hook_func);
+		
 	SceKernelMemPoolCreateOpt opt;
 	opt.size = 0x1C;
 	opt.uselock = 0x100;
@@ -632,7 +661,12 @@ int module_stop(SceSize argc, const void *args)
 		taiHookReleaseForKernel(SceTouch_ksceTouchReadRegion_hook_uid,
 			SceTouch_ksceTouchReadRegion_ref);
 	}
-
+	
+	if (SceMotion_sceMotionGetState_hook_uid > 0){
+		taiHookReleaseForKernel(SceMotion_sceMotionGetState_hook_uid,
+			SceMotion_sceMotionGetState_ref);
+	}
+	
 	log_flush();
 
 	return SCE_KERNEL_STOP_SUCCESS;
