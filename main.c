@@ -1,14 +1,13 @@
 #include <psp2kern/kernel/modulemgr.h>
 #include <psp2kern/kernel/threadmgr.h>
 #include <psp2kern/kernel/sysmem.h>
+#include <psp2kern/kernel/suspend.h>
 #include <psp2kern/bt.h>
 #include <psp2kern/ctrl.h>
 #include <psp2/touch.h>
 #include <psp2/motion.h>
 #include <taihen.h>
 #include "log.h"
-
-extern int ksceKernelPowerTick(int);
 
 #define DS4_VID   0x054C
 #define DS4_PID   0x05C4
