@@ -10,8 +10,9 @@
 
 extern int ksceKernelPowerTick(int);
 
-#define DS4_VID 0x054C
-#define DS4_PID 0x05C4
+#define DS4_VID   0x054C
+#define DS4_PID   0x05C4
+#define DS4_2_PID 0x09CC
 
 #define DS4_TOUCHPAD_W 1920
 #define DS4_TOUCHPAD_H 940
@@ -128,7 +129,8 @@ static inline void ds4_input_reset(void)
 
 static int is_ds4(const unsigned short vid_pid[2])
 {
-	return vid_pid[0] == DS4_VID && vid_pid[1] == DS4_PID;
+	return (vid_pid[0] == DS4_VID) &&
+		((vid_pid[1] == DS4_PID) || (vid_pid[1] == DS4_2_PID));
 }
 
 static inline void *mempool_alloc(unsigned int size)
@@ -253,7 +255,7 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 
 	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
 		ds4->right_x, ds4->right_y, ds4->left_x, ds4->left_y,
-		ds4->right_x, ds4->right_y, 32);
+		ds4->right_x, ds4->right_y, 1);
 
 	if (buttons != 0 || js_moved)
 		ksceKernelPowerTick(0);
@@ -342,9 +344,11 @@ static int SceTouch_ksceTouchReadRegion_hook_func(SceUInt32 port, SceTouchData *
 	return ret;
 }
 
-static void patch_motion_state(SceMotionState *motionState, struct ds4_input_report *ds4){
-	SceMotionState *u_data = motionState;
+static void patch_motion_state(SceMotionState *motionState, struct ds4_input_report *ds4)
+{
 	SceMotionState k_data;
+	SceMotionState *u_data = motionState;
+
 	ksceKernelMemcpyUserToKernel(&k_data, (uintptr_t)u_data, sizeof(k_data));
 	k_data.acceleration.x = ds4->accel_x;
 	k_data.acceleration.y = ds4->accel_y;
@@ -352,15 +356,16 @@ static void patch_motion_state(SceMotionState *motionState, struct ds4_input_rep
 	ksceKernelMemcpyKernelToUser((uintptr_t)u_data, &k_data, sizeof(k_data));
 }
 
-static int SceMotion_sceMotionGetState_hook_func(SceMotionState *motionState){
+static int SceMotion_sceMotionGetState_hook_func(SceMotionState *motionState)
+{
 	int ret;
-	
+
 	ret = TAI_CONTINUE(int, SceMotion_sceMotionGetState_ref, motionState);
-	
+
 	if (ret >= 0 && ds4_connected) {
 		patch_motion_state(motionState, &ds4_input);
 	}
-	
+
 	return ret;
 }
 
@@ -594,10 +599,11 @@ int module_start(SceSize argc, const void *args)
 		&SceTouch_ksceTouchReadRegion_ref, "SceTouch", TAI_ANY_LIBRARY,
 		0x9A91F624, SceTouch_ksceTouchReadRegion_hook_func);
 
+	/* SceMotion hooks */
 	SceMotion_sceMotionGetState_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
 		&SceMotion_sceMotionGetState_ref, "SceMotion", TAI_ANY_LIBRARY,
 		0xBDB32767, SceMotion_sceMotionGetState_hook_func);
-		
+
 	SceKernelMemPoolCreateOpt opt;
 	opt.size = 0x1C;
 	opt.uselock = 0x100;
@@ -661,12 +667,12 @@ int module_stop(SceSize argc, const void *args)
 		taiHookReleaseForKernel(SceTouch_ksceTouchReadRegion_hook_uid,
 			SceTouch_ksceTouchReadRegion_ref);
 	}
-	
-	if (SceMotion_sceMotionGetState_hook_uid > 0){
+
+	if (SceMotion_sceMotionGetState_hook_uid > 0) {
 		taiHookReleaseForKernel(SceMotion_sceMotionGetState_hook_uid,
 			SceMotion_sceMotionGetState_ref);
 	}
-	
+
 	log_flush();
 
 	return SCE_KERNEL_STOP_SUCCESS;
