@@ -33,7 +33,6 @@ target_link_libraries(${PROJECT_NAME}.elf
 	SceSysclibForDriver_stub
 	SceSysmemForDriver_stub
 	SceSysmemForKernel_stub
-	SceThreadmgrForKernel_stub
 	SceThreadmgrForDriver_stub
 	SceIofilemgrForDriver_stub
 	SceBtForDriver_stub
