@@ -134,12 +134,12 @@ static int is_ds4(const unsigned short vid_pid[2])
 
 static inline void *mempool_alloc(unsigned int size)
 {
-	return ksceKernelMemPoolAlloc(bt_mempool_uid, size);
+	return ksceKernelAllocHeapMemory(bt_mempool_uid, size);
 }
 
 static inline void mempool_free(void *ptr)
 {
-	ksceKernelMemPoolFree(bt_mempool_uid, ptr);
+	ksceKernelFreeHeapMemory(bt_mempool_uid, ptr);
 }
 
 static int ds4_send_report(unsigned int mac0, unsigned int mac1, uint8_t flags, uint8_t report,
@@ -603,7 +603,7 @@ int module_start(SceSize argc, const void *args)
 		&SceMotion_sceMotionGetState_ref, "SceMotion", TAI_ANY_LIBRARY,
 		0xBDB32767, SceMotion_sceMotionGetState_hook_func);
 
-	SceKernelMemPoolCreateOpt opt;
+	SceKernelHeapCreateOpt opt;
 	opt.size = 0x1C;
 	opt.uselock = 0x100;
 	opt.field_8 = 0x10000;
@@ -612,7 +612,7 @@ int module_start(SceSize argc, const void *args)
 	opt.field_14 = 0;
 	opt.field_18 = 0;
 
-	bt_mempool_uid = ksceKernelMemPoolCreate("ds4vita_mempool", 0x100, &opt);
+	bt_mempool_uid = ksceKernelCreateHeap("ds4vita_mempool", 0x100, &opt);
 	LOG("Bluetooth mempool UID: 0x%08X\n", bt_mempool_uid);
 
 	bt_thread_uid = ksceKernelCreateThread("ds4vita_bt_thread", ds4vita_bt_thread,
@@ -639,7 +639,7 @@ int module_stop(SceSize argc, const void *args)
 	}
 
 	if (bt_mempool_uid > 0) {
-		ksceKernelMemPoolDestroy(bt_mempool_uid);
+		ksceKernelDeleteHeap(bt_mempool_uid);
 	}
 
 	if (SceBt_sub_22999C8_hook_uid > 0) {
