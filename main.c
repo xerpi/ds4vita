@@ -250,7 +250,7 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 		js_moved = 1;
 	}
 
-	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 32);
+	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons | 0x10000000, 32);
 
 	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
 		ds4->right_x, ds4->right_y, ds4->left_x, ds4->left_y,
