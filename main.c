@@ -231,10 +231,20 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 	if (ds4->dpad == 5 || ds4->dpad == 6 || ds4->dpad == 7)
 		buttons |= SCE_CTRL_LEFT;
 
-	if (ds4->l1 || ds4->l2)
-		buttons |= (SCE_CTRL_L1 | SCE_CTRL_LTRIGGER);
-	if (ds4->r1 || ds4->r2)
-		buttons |= (SCE_CTRL_R1 | SCE_CTRL_RTRIGGER);
+	if (ds4->l1)
+		buttons |= SCE_CTRL_L1;
+	if (ds4->r1)
+		buttons |= SCE_CTRL_R1;
+
+	if (ds4->l2)
+		buttons |= SCE_CTRL_LTRIGGER;
+	if (ds4->r2)
+		buttons |= SCE_CTRL_RTRIGGER;
+
+	if (ds4->l3)
+		buttons |= SCE_CTRL_L3;
+	if (ds4->r3)
+		buttons |= SCE_CTRL_R3;
 
 	if (ds4->share)
 		buttons |= SCE_CTRL_SELECT;
@@ -250,7 +260,7 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 		js_moved = 1;
 	}
 
-	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons | 0x10000000, 32);
+	ksceCtrlSetButtonEmulation(0, 0, buttons, buttons, 32);
 
 	ksceCtrlSetAnalogEmulation(0, 0, ds4->left_x, ds4->left_y,
 		ds4->right_x, ds4->right_y, ds4->left_x, ds4->left_y,
