@@ -124,6 +124,8 @@ static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlReadBufferPositive2_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = -1;
+static tai_hook_ref_t SceCtrl_ksceCtrlGetControllerPortInfo_ref;
+static SceUID SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid = -1;
 
 static inline void ds4_input_reset(void)
 {
@@ -295,6 +297,15 @@ static void patch_analogdata(int port, SceCtrlData *pad_data, int count,
 
 		pad_data++;
 	}
+}
+
+static int SceCtrl_ksceCtrlGetControllerPortInfo_hook_func(SceCtrlPortInfo *info) {
+	int ret = TAI_CONTINUE(int, SceCtrl_ksceCtrlGetControllerPortInfo_ref, info);
+
+	if (ret >= 0 && ds4_connected)
+		info->port[0] |= SCE_CTRL_TYPE_DS4;
+
+	return ret;
 }
 
 static int SceCtrl_sceCtrlPeekBufferPositive2_hook_func(int port, SceCtrlData *pad_data, int count)
@@ -626,6 +637,11 @@ int module_start(SceSize argc, const void *args)
 		&SceBt_sub_22999C8_ref, SceBt_modinfo.modid, 0,
 		0x22999C8 - 0x2280000, 1, SceBt_sub_22999C8_hook_func);
 
+	/* Patch PAD Type */
+	SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceCtrl_ksceCtrlGetControllerPortInfo_ref, "SceCtrl", TAI_ANY_LIBRARY,
+		0xF11D0D30, SceCtrl_ksceCtrlGetControllerPortInfo_hook_func);
+
 	/* SceCtrl hooks (needed for PS4 remote play) */
 	SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
 		&SceCtrl_sceCtrlPeekBufferPositive2_ref, "SceCtrl", TAI_ANY_LIBRARY,
@@ -700,6 +716,11 @@ int module_stop(SceSize argc, const void *args)
 	if (SceBt_sub_22999C8_hook_uid > 0) {
 		taiHookReleaseForKernel(SceBt_sub_22999C8_hook_uid,
 			SceBt_sub_22999C8_ref);
+	}
+
+	if (SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid > 0) {
+		taiHookReleaseForKernel(SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid,
+			SceCtrl_ksceCtrlGetControllerPortInfo_ref);
 	}
 
 	if (SceCtrl_sceCtrlPeekBufferPositive2_hook_uid > 0) {
