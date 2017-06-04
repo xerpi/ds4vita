@@ -266,7 +266,9 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 	if ((abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD) ||
 	    (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD) ||
 	    (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD) ||
-	    (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)) {
+	    (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD) ||
+	    ds4->l_trigger > DS4_ANALOG_THRESHOLD ||
+	    ds4->r_trigger > DS4_ANALOG_THRESHOLD) {
 		js_moved = 1;
 	}
 
@@ -297,6 +299,10 @@ static void patch_analogdata(int port, SceCtrlData *pad_data, int count,
 			k_data.rx = ds4->right_x;
 		if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)
 			k_data.ry = ds4->right_y;
+		if (ds4->l_trigger > DS4_ANALOG_THRESHOLD)
+			k_data.lt = ds4->l_trigger;
+		if (ds4->r_trigger > DS4_ANALOG_THRESHOLD)
+			k_data.rt = ds4->r_trigger;
 		ksceKernelMemcpyKernelToUser((uintptr_t)pad_data, &k_data, sizeof(k_data));
 
 		pad_data++;
