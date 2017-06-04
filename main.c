@@ -124,6 +124,10 @@ static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlReadBufferPositive2_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = -1;
+static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositiveExt2_ref;
+static SceUID SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid = -1;
+static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositiveExt2_ref;
+static SceUID SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_ksceCtrlGetControllerPortInfo_ref;
 static SceUID SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid = -1;
 
@@ -321,6 +325,26 @@ static int SceCtrl_sceCtrlPeekBufferPositive2_hook_func(int port, SceCtrlData *p
 static int SceCtrl_sceCtrlReadBufferPositive2_hook_func(int port, SceCtrlData *pad_data, int count)
 {
 	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlReadBufferPositive2_ref, port, pad_data, count);
+
+	if (ret >= 0 && ds4_connected)
+		patch_analogdata(port, pad_data, count, &ds4_input);
+
+	return ret;
+}
+
+static int SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_func(int port, SceCtrlData *pad_data, int count)
+{
+	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlPeekBufferPositiveExt2_ref, port, pad_data, count);
+
+	if (ret >= 0 && ds4_connected)
+		patch_analogdata(port, pad_data, count, &ds4_input);
+
+	return ret;
+}
+
+static int SceCtrl_sceCtrlReadBufferPositiveExt2_hook_func(int port, SceCtrlData *pad_data, int count)
+{
+	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlReadBufferPositiveExt2_ref, port, pad_data, count);
 
 	if (ret >= 0 && ds4_connected)
 		patch_analogdata(port, pad_data, count, &ds4_input);
@@ -651,6 +675,14 @@ int module_start(SceSize argc, const void *args)
 		&SceCtrl_sceCtrlReadBufferPositive2_ref, "SceCtrl", TAI_ANY_LIBRARY,
 		0xC4226A3E, SceCtrl_sceCtrlReadBufferPositive2_hook_func);
 
+	SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceCtrl_sceCtrlPeekBufferPositiveExt2_ref, "SceCtrl", TAI_ANY_LIBRARY,
+		0x860BF292, SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_func);
+
+	SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceCtrl_sceCtrlReadBufferPositiveExt2_ref, "SceCtrl", TAI_ANY_LIBRARY,
+		0xA7178860, SceCtrl_sceCtrlReadBufferPositiveExt2_hook_func);
+
 	/* SceTouch hooks */
 	SceTouch_ksceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
 		&SceTouch_ksceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
@@ -732,6 +764,17 @@ int module_stop(SceSize argc, const void *args)
 		taiHookReleaseForKernel(SceCtrl_sceCtrlReadBufferPositive2_hook_uid,
 			SceCtrl_sceCtrlReadBufferPositive2_ref);
 	}
+
+	if (SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid > 0) {
+		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid,
+			SceCtrl_sceCtrlPeekBufferPositiveExt2_ref);
+	}
+
+	if (SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid > 0) {
+		taiHookReleaseForKernel(SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid,
+			SceCtrl_sceCtrlReadBufferPositiveExt2_ref);
+	}
+
 
 	if (SceTouch_ksceTouchPeek_hook_uid > 0) {
 		taiHookReleaseForKernel(SceTouch_ksceTouchPeek_hook_uid,
