@@ -124,6 +124,10 @@ static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlReadBufferPositive2_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositive2_ref;
 static SceUID SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = -1;
+static tai_hook_ref_t SceCtrl_sceCtrlPeekBufferPositiveExt2_ref;
+static SceUID SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid = -1;
+static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositiveExt2_ref;
+static SceUID SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_ksceCtrlGetControllerPortInfo_ref;
 static SceUID SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid = -1;
 
@@ -262,7 +266,9 @@ static void set_input_emulation(struct ds4_input_report *ds4)
 	if ((abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD) ||
 	    (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD) ||
 	    (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD) ||
-	    (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)) {
+	    (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD) ||
+	    ds4->l_trigger > DS4_ANALOG_THRESHOLD ||
+	    ds4->r_trigger > DS4_ANALOG_THRESHOLD) {
 		js_moved = 1;
 	}
 
@@ -293,6 +299,10 @@ static void patch_analogdata(int port, SceCtrlData *pad_data, int count,
 			k_data.rx = ds4->right_x;
 		if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)
 			k_data.ry = ds4->right_y;
+		if (ds4->l_trigger > DS4_ANALOG_THRESHOLD)
+			k_data.lt = ds4->l_trigger;
+		if (ds4->r_trigger > DS4_ANALOG_THRESHOLD)
+			k_data.rt = ds4->r_trigger;
 		ksceKernelMemcpyKernelToUser((uintptr_t)pad_data, &k_data, sizeof(k_data));
 
 		pad_data++;
@@ -321,6 +331,26 @@ static int SceCtrl_sceCtrlPeekBufferPositive2_hook_func(int port, SceCtrlData *p
 static int SceCtrl_sceCtrlReadBufferPositive2_hook_func(int port, SceCtrlData *pad_data, int count)
 {
 	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlReadBufferPositive2_ref, port, pad_data, count);
+
+	if (ret >= 0 && ds4_connected)
+		patch_analogdata(port, pad_data, count, &ds4_input);
+
+	return ret;
+}
+
+static int SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_func(int port, SceCtrlData *pad_data, int count)
+{
+	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlPeekBufferPositiveExt2_ref, port, pad_data, count);
+
+	if (ret >= 0 && ds4_connected)
+		patch_analogdata(port, pad_data, count, &ds4_input);
+
+	return ret;
+}
+
+static int SceCtrl_sceCtrlReadBufferPositiveExt2_hook_func(int port, SceCtrlData *pad_data, int count)
+{
+	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlReadBufferPositiveExt2_ref, port, pad_data, count);
 
 	if (ret >= 0 && ds4_connected)
 		patch_analogdata(port, pad_data, count, &ds4_input);
@@ -651,6 +681,14 @@ int module_start(SceSize argc, const void *args)
 		&SceCtrl_sceCtrlReadBufferPositive2_ref, "SceCtrl", TAI_ANY_LIBRARY,
 		0xC4226A3E, SceCtrl_sceCtrlReadBufferPositive2_hook_func);
 
+	SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceCtrl_sceCtrlPeekBufferPositiveExt2_ref, "SceCtrl", TAI_ANY_LIBRARY,
+		0x860BF292, SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_func);
+
+	SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceCtrl_sceCtrlReadBufferPositiveExt2_ref, "SceCtrl", TAI_ANY_LIBRARY,
+		0xA7178860, SceCtrl_sceCtrlReadBufferPositiveExt2_hook_func);
+
 	/* SceTouch hooks */
 	SceTouch_ksceTouchPeek_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
 		&SceTouch_ksceTouchPeek_ref, "SceTouch", TAI_ANY_LIBRARY,
@@ -732,6 +770,17 @@ int module_stop(SceSize argc, const void *args)
 		taiHookReleaseForKernel(SceCtrl_sceCtrlReadBufferPositive2_hook_uid,
 			SceCtrl_sceCtrlReadBufferPositive2_ref);
 	}
+
+	if (SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid > 0) {
+		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositiveExt2_hook_uid,
+			SceCtrl_sceCtrlPeekBufferPositiveExt2_ref);
+	}
+
+	if (SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid > 0) {
+		taiHookReleaseForKernel(SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid,
+			SceCtrl_sceCtrlReadBufferPositiveExt2_ref);
+	}
+
 
 	if (SceTouch_ksceTouchPeek_hook_uid > 0) {
 		taiHookReleaseForKernel(SceTouch_ksceTouchPeek_hook_uid,
