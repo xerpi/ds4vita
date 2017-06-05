@@ -130,6 +130,8 @@ static tai_hook_ref_t SceCtrl_sceCtrlReadBufferPositiveExt2_ref;
 static SceUID SceCtrl_sceCtrlReadBufferPositiveExt2_hook_uid = -1;
 static tai_hook_ref_t SceCtrl_ksceCtrlGetControllerPortInfo_ref;
 static SceUID SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid = -1;
+static tai_hook_ref_t SceCtrl_sceCtrlGetBatteryInfo_ref;
+static SceUID SceCtrl_sceCtrlGetBatteryInfo_hook_uid = -1;
 
 static inline void ds4_input_reset(void)
 {
@@ -312,11 +314,34 @@ static void patch_analogdata(int port, SceCtrlData *pad_data, int count,
 static int SceCtrl_ksceCtrlGetControllerPortInfo_hook_func(SceCtrlPortInfo *info) {
 	int ret = TAI_CONTINUE(int, SceCtrl_ksceCtrlGetControllerPortInfo_ref, info);
 
-	if (ret >= 0 && ds4_connected)
-		info->port[0] |= SCE_CTRL_TYPE_DS4;
+	if (ret >= 0 && ds4_connected) {
+		// info->port[0] |= SCE_CTRL_TYPE_VIRT;
+		info->port[1] = SCE_CTRL_TYPE_DS4;
+	}
 
 	return ret;
 }
+
+static int SceCtrl_sceCtrlGetBatteryInfo_hook_func(int port, SceUInt8 *batt) {
+	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlGetBatteryInfo_ref, port, batt);
+
+	if (ds4_connected && port == 1) {
+		SceUInt8 k_batt;
+		ksceKernelMemcpyUserToKernel(&k_batt, (uintptr_t)batt, sizeof(k_batt));
+		if (ds4_input.usb_plugged) {
+			k_batt = ds4_input.battery_level <= 10 ? 0xEE : 0xEF;
+		} else {
+			if (ds4_input.battery_level == 0) k_batt = 0;
+			else k_batt = (ds4_input.battery_level / 2) + 1;
+			if (k_batt > 5) k_batt = 5;
+		}
+		ksceKernelMemcpyKernelToUser((uintptr_t)batt, &k_batt, sizeof(k_batt));
+		return 0;
+	}
+
+	return ret;
+}
+
 
 static int SceCtrl_sceCtrlPeekBufferPositive2_hook_func(int port, SceCtrlData *pad_data, int count)
 {
@@ -672,6 +697,11 @@ int module_start(SceSize argc, const void *args)
 		&SceCtrl_ksceCtrlGetControllerPortInfo_ref, "SceCtrl", TAI_ANY_LIBRARY,
 		0xF11D0D30, SceCtrl_ksceCtrlGetControllerPortInfo_hook_func);
 
+	/* Patch Battery level */
+	SceCtrl_sceCtrlGetBatteryInfo_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
+		&SceCtrl_sceCtrlGetBatteryInfo_ref, "SceCtrl", TAI_ANY_LIBRARY,
+		0x8F9B1CE5, SceCtrl_sceCtrlGetBatteryInfo_hook_func);
+
 	/* SceCtrl hooks (needed for PS4 remote play) */
 	SceCtrl_sceCtrlPeekBufferPositive2_hook_uid = taiHookFunctionExportForKernel(KERNEL_PID,
 		&SceCtrl_sceCtrlPeekBufferPositive2_ref, "SceCtrl", TAI_ANY_LIBRARY,
@@ -760,6 +790,12 @@ int module_stop(SceSize argc, const void *args)
 		taiHookReleaseForKernel(SceCtrl_ksceCtrlGetControllerPortInfo_hook_uid,
 			SceCtrl_ksceCtrlGetControllerPortInfo_ref);
 	}
+
+	if (SceCtrl_sceCtrlGetBatteryInfo_hook_uid > 0) {
+		taiHookReleaseForKernel(SceCtrl_sceCtrlGetBatteryInfo_hook_uid,
+			SceCtrl_sceCtrlGetBatteryInfo_ref);
+	}
+
 
 	if (SceCtrl_sceCtrlPeekBufferPositive2_hook_uid > 0) {
 		taiHookReleaseForKernel(SceCtrl_sceCtrlPeekBufferPositive2_hook_uid,
