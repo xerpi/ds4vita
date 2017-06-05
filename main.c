@@ -312,8 +312,10 @@ static void patch_analogdata(int port, SceCtrlData *pad_data, int count,
 static int SceCtrl_ksceCtrlGetControllerPortInfo_hook_func(SceCtrlPortInfo *info) {
 	int ret = TAI_CONTINUE(int, SceCtrl_ksceCtrlGetControllerPortInfo_ref, info);
 
-	if (ret >= 0 && ds4_connected)
-		info->port[0] |= SCE_CTRL_TYPE_DS4;
+	if (ret >= 0 && ds4_connected) {
+		// info->port[0] |= SCE_CTRL_TYPE_VIRT;
+		info->port[1] = SCE_CTRL_TYPE_DS4;
+	}
 
 	return ret;
 }
