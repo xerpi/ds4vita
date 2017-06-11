@@ -39,6 +39,8 @@ typedef struct {
 	int (*singleControllerMode)(int port);
 } SceCtrlVirtualControllerDriver;
 
+int ksceCtrlRegisterVirtualControllerDriver(SceCtrlVirtualControllerDriver *driver);
+
 struct ds4_input_report {
 	unsigned char report_id;
 	unsigned char left_x;
@@ -130,9 +132,7 @@ static struct ds4_input_report ds4_input;
 	static SceUID name##_hook_uid = -1; \
 	static int name##_hook_func(__VA_ARGS__)
 
-static SceUID SceCtrl_virt_ctrl_drv_uid = -1;
-
-static tai_module_info_t SceCtrl_modinfo = {0};
+static SceUID SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid = -1;
 
 static int read_buttons(int port, SceCtrlData *pad_data, int count)
 {
@@ -249,24 +249,6 @@ static SceCtrlVirtualControllerDriver driver = {
 	.unk1 = unk1,
 	.singleControllerMode = single_controller_mode,
 };
-
-static int patch_virtual_controller_driver()
-{
-	if (SceCtrl_virt_ctrl_drv_uid <= 0) {
-		SceCtrlVirtualControllerDriver *ptr = &driver;
-		SceCtrl_virt_ctrl_drv_uid = taiInjectDataForKernel(KERNEL_PID,
-			SceCtrl_modinfo.modid, 1,
-			0x015DEAC0 - 0x015DE000, &ptr, sizeof(SceCtrlVirtualControllerDriver*));
-	}
-	return 0;
-}
-
-static int release_virtual_controller_driver()
-{
-	taiInjectReleaseForKernel(SceCtrl_virt_ctrl_drv_uid);
-	SceCtrl_virt_ctrl_drv_uid = -1;
-	return 0;
-}
 
 static inline void ds4_input_reset(void)
 {
@@ -629,9 +611,9 @@ DECL_FUNC_HOOK(SceCtrl_sub_17C107C, int port, SceCtrlData *pad_data, int count)
 	if (!ds4_connected) {
 		return TAI_CONTINUE(int, SceCtrl_sub_17C107C_ref, port, pad_data, count);
 	}
-	release_virtual_controller_driver();
+	ksceCtrlRegisterVirtualControllerDriver(NULL);
 	int ret = TAI_CONTINUE(int, SceCtrl_sub_17C107C_ref, port, pad_data, count);
-	patch_virtual_controller_driver();
+	ksceCtrlRegisterVirtualControllerDriver(&driver);
 	return ret;
 }
 
@@ -702,7 +684,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 				ds4_mac1 = hid_event.mac1;
 				ds4_connected = 1;
 				ds4_send_0x11_report(hid_event.mac0, hid_event.mac1);
-				patch_virtual_controller_driver();
+				ksceCtrlRegisterVirtualControllerDriver(&driver);
 			}
 			break;
 		}
@@ -711,7 +693,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 		case 0x06: /* Device disconnect event*/
 			ds4_connected = 0;
 			reset_input_emulation();
-			release_virtual_controller_driver();
+			ksceCtrlRegisterVirtualControllerDriver(NULL);
 			break;
 
 		case 0x08: /* Connection requested event */
@@ -804,6 +786,7 @@ int module_start(SceSize argc, const void *args)
 {
 	int ret;
 	tai_module_info_t SceBt_modinfo;
+	tai_module_info_t SceCtrl_modinfo;
 
 	log_reset();
 
@@ -828,6 +811,10 @@ int module_start(SceSize argc, const void *args)
 		SceBt_modinfo.modid, 0, 0x22999C8 - 0x2280000, 1);
 
 	/* SceCtrl hooks (needed for PS4 remote play) */
+	char nop[0x2] = "\x00\xBF";
+	SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid = taiInjectDataForKernel(KERNEL_PID,
+		SceCtrl_modinfo.modid, 0, 0x17C5B2A - 0x17C0000, nop, 2);
+
 	BIND_FUNC_OFFSET_HOOK(SceCtrl_sub_17C107C, KERNEL_PID,
 		SceCtrl_modinfo.modid, 0, 0x17C107C - 0x17C0000, 1);
 
@@ -907,7 +894,9 @@ int module_stop(SceSize argc, const void *args)
 	}
 
 	UNBIND_FUNC_HOOK(SceBt_sub_22999C8);
-	release_virtual_controller_driver();
+	if (SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid > 0) {
+		taiInjectReleaseForKernel(SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid);;
+	}
 	UNBIND_FUNC_HOOK(SceCtrl_sub_17C107C);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositive2);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferPositive2);
