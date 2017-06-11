@@ -8,6 +8,7 @@
 #include <psp2/motion.h>
 #include <taihen.h>
 #include "log.h"
+#include "ds4bt.h"
 
 #define DS4_VID   0x054C
 #define DS4_PID   0x05C4
@@ -21,6 +22,22 @@
 #define VITA_FRONT_TOUCHSCREEN_H 1080
 
 #define abs(x) (((x) < 0) ? -(x) : (x))
+
+typedef struct {
+	int (*readButtons)(int port, SceCtrlData *pad_data, int count);
+	int (*setActuator)(int port, const SceCtrlActuator* pState);
+	int (*getBatteryInfo)(int port, SceUInt8 *batt);
+	int (*disconnect)(int port);
+	int (*setTurnOffInterval)(int port);
+	int (*getActiveControllerPort)(void);
+	int (*changePortAssign)(int port1, int port2);
+	int (*unk0)(void); // SceCtrlForDriver_69E45836 equivalent
+	int (*getControllerPortInfo)(SceCtrlPortInfo *info);
+	int (*setLightBar)(int port, SceUInt8 r, SceUInt8 g, SceUInt8 b);
+	int (*resetLightBar)(int port);
+	int (*unk1)(int port); // SceCtrlForDriver_B26C2231 equivalent
+	int (*singleControllerMode)(int port);
+} SceCtrlVirtualControllerDriver;
 
 struct ds4_input_report {
 	unsigned char report_id;
@@ -113,6 +130,144 @@ static struct ds4_input_report ds4_input;
 	static SceUID name##_hook_uid = -1; \
 	static int name##_hook_func(__VA_ARGS__)
 
+static SceUID SceCtrl_virt_ctrl_drv_uid = -1;
+
+static tai_module_info_t SceCtrl_modinfo = {0};
+
+static int read_buttons(int port, SceCtrlData *pad_data, int count)
+{
+	// TODO
+	return 0;
+}
+
+static int set_actuator(int port, const SceCtrlActuator* pState)
+{
+	// TODO
+	return 0x80340021;
+}
+
+static int get_battery_info(int port, SceUInt8 *batt)
+{
+	if (ds4_connected && port == 1) {
+		if (ds4_input.usb_plugged) {
+			*batt = ds4_input.battery_level <= 10 ? 0xEE : 0xEF;
+		} else {
+			if (ds4_input.battery_level == 0) *batt = 0;
+			else *batt = (ds4_input.battery_level / 2) + 1;
+			if (*batt > 5) *batt = 5;
+		}
+		return 0;
+	}
+	return 0x80340021;
+}
+
+static int disconnect(int port)
+{
+	// TODO
+	return 0x80340021;
+}
+
+static int set_turnoff_interval(int port)
+{
+	// TODO
+	return 0x80340021;
+}
+
+static int get_active_controller_port(void)
+{
+	if (ds4_connected) {
+		return 1;
+	}
+	return 0x80340021;
+}
+
+static int change_port_assign(int port1, int port2)
+{
+	// TODO
+	return 0x80340001;
+}
+
+int unk0(void) {
+	return 0;
+}
+
+static int get_controller_port_info(SceCtrlPortInfo *info)
+{
+	memset(info, 0, sizeof(SceCtrlPortInfo));
+	info->port[0] = SCE_CTRL_TYPE_PHY;
+	if (ds4_connected) {
+		// info->port[0] |= SCE_CTRL_TYPE_VIRT;
+		info->port[1] = SCE_CTRL_TYPE_DS4;
+	}
+	return 0;
+};
+
+static int set_light_bar(int port, SceUInt8 r, SceUInt8 g, SceUInt8 b)
+{
+	if (!ds4_connected || port != 1) {
+		return 0x80340021;
+	}
+
+	return ds4_send_0x11_report_with_custom_rgb(ds4_mac0, ds4_mac1, r, g, b);
+};
+
+static int reset_light_bar(int port)
+{
+	if (!ds4_connected || port != 1) {
+		return 0x80340021;
+	}
+
+	return ds4_send_0x11_report_with_custom_rgb(ds4_mac0, ds4_mac1, 0xFF, 0x00, 0xFF);
+};
+
+static int single_controller_mode(int port)
+{
+	if (!ds4_connected || port != 1) {
+		return 0x80340021;
+	}
+
+	// TODO
+	return 0;
+}
+
+int unk1(int port) {
+	return 0;
+}
+
+static SceCtrlVirtualControllerDriver driver = {
+	.readButtons = read_buttons,
+	.setActuator = set_actuator,
+	.getBatteryInfo = get_battery_info,
+	.disconnect = disconnect,
+	.setTurnOffInterval = set_turnoff_interval,
+	.getActiveControllerPort = get_active_controller_port,
+	.changePortAssign = change_port_assign,
+	.unk0 = unk0,
+	.getControllerPortInfo = get_controller_port_info,
+	.setLightBar = set_light_bar,
+	.resetLightBar = reset_light_bar,
+	.unk1 = unk1,
+	.singleControllerMode = single_controller_mode,
+};
+
+static int patch_virtual_controller_driver()
+{
+	if (SceCtrl_virt_ctrl_drv_uid <= 0) {
+		SceCtrlVirtualControllerDriver *ptr = &driver;
+		SceCtrl_virt_ctrl_drv_uid = taiInjectDataForKernel(KERNEL_PID,
+			SceCtrl_modinfo.modid, 1,
+			0x015DEAC0 - 0x015DE000, &ptr, sizeof(SceCtrlVirtualControllerDriver*));
+	}
+	return 0;
+}
+
+static int release_virtual_controller_driver()
+{
+	taiInjectReleaseForKernel(SceCtrl_virt_ctrl_drv_uid);
+	SceCtrl_virt_ctrl_drv_uid = -1;
+	return 0;
+}
+
 static inline void ds4_input_reset(void)
 {
 	memset(&ds4_input, 0, sizeof(ds4_input));
@@ -168,7 +323,7 @@ static int ds4_send_report(unsigned int mac0, unsigned int mac1, uint8_t flags, 
 	return 0;
 }
 
-static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
+int ds4_send_0x11_report_with_custom_rgb(unsigned int mac0, unsigned int mac1, SceUInt8 r, SceUInt8 g, SceUInt8 b)
 {
 	unsigned char data[] = {
 		0x80,
@@ -178,9 +333,9 @@ static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
 		0x00,
 		0x00, // Motor right
 		0x00, // Motor left
-		0xFF, // R
-		0x00, // G
-		0xFF, // B
+		r, // R
+		g, // G
+		b, // B
 		0xFF, // Blink on
 		0x00, // Blink off
 	};
@@ -191,6 +346,11 @@ static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
 	}
 
 	return 0;
+}
+
+static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
+{
+	return ds4_send_0x11_report_with_custom_rgb(mac0, mac1, 0xFF, 0x00, 0xFF);
 }
 
 static void reset_input_emulation()
@@ -289,39 +449,6 @@ static void patch_analogdata(int port, SceCtrlData *pad_data, int count,
 
 		pad_data++;
 	}
-}
-
-DECL_FUNC_HOOK(SceCtrl_ksceCtrlGetControllerPortInfo, SceCtrlPortInfo *info)
-{
-	int ret = TAI_CONTINUE(int, SceCtrl_ksceCtrlGetControllerPortInfo_ref, info);
-
-	if (ret >= 0 && ds4_connected) {
-		// info->port[0] |= SCE_CTRL_TYPE_VIRT;
-		info->port[1] = SCE_CTRL_TYPE_DS4;
-	}
-
-	return ret;
-}
-
-DECL_FUNC_HOOK(SceCtrl_sceCtrlGetBatteryInfo, int port, SceUInt8 *batt)
-{
-	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlGetBatteryInfo_ref, port, batt);
-
-	if (ds4_connected && port == 1) {
-		SceUInt8 k_batt;
-		ksceKernelMemcpyUserToKernel(&k_batt, (uintptr_t)batt, sizeof(k_batt));
-		if (ds4_input.usb_plugged) {
-			k_batt = ds4_input.battery_level <= 10 ? 0xEE : 0xEF;
-		} else {
-			if (ds4_input.battery_level == 0) k_batt = 0;
-			else k_batt = (ds4_input.battery_level / 2) + 1;
-			if (k_batt > 5) k_batt = 5;
-		}
-		ksceKernelMemcpyKernelToUser((uintptr_t)batt, &k_batt, sizeof(k_batt));
-		return 0;
-	}
-
-	return ret;
 }
 
 DECL_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositive2, int port, SceCtrlData *pad_data, int count)
@@ -497,6 +624,17 @@ DECL_FUNC_HOOK(SceBt_sub_22999C8, void *dev_base_ptr, int r1)
 	return TAI_CONTINUE(int, SceBt_sub_22999C8_ref, dev_base_ptr, r1);
 }
 
+DECL_FUNC_HOOK(SceCtrl_sub_17C107C, int port, SceCtrlData *pad_data, int count)
+{
+	if (!ds4_connected) {
+		return TAI_CONTINUE(int, SceCtrl_sub_17C107C_ref, port, pad_data, count);
+	}
+	release_virtual_controller_driver();
+	int ret = TAI_CONTINUE(int, SceCtrl_sub_17C107C_ref, port, pad_data, count);
+	patch_virtual_controller_driver();
+	return ret;
+}
+
 static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common)
 {
 	static SceBtHidRequest hid_request;
@@ -564,6 +702,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 				ds4_mac1 = hid_event.mac1;
 				ds4_connected = 1;
 				ds4_send_0x11_report(hid_event.mac0, hid_event.mac1);
+				patch_virtual_controller_driver();
 			}
 			break;
 		}
@@ -572,6 +711,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 		case 0x06: /* Device disconnect event*/
 			ds4_connected = 0;
 			reset_input_emulation();
+			release_virtual_controller_driver();
 			break;
 
 		case 0x08: /* Connection requested event */
@@ -673,22 +813,24 @@ int module_start(SceSize argc, const void *args)
 	ret = taiGetModuleInfoForKernel(KERNEL_PID, "SceBt", &SceBt_modinfo);
 	if (ret < 0) {
 		LOG("Error finding SceBt module\n");
-		goto error_find_scebt;
+		goto error_find_module;
+	}
+
+	SceCtrl_modinfo.size = sizeof(SceCtrl_modinfo);
+	ret = taiGetModuleInfoForKernel(KERNEL_PID, "SceCtrl", &SceCtrl_modinfo);
+	if (ret < 0) {
+		LOG("Error finding SceCtrl module\n");
+		goto error_find_module;
 	}
 
 	/* SceBt hooks */
 	BIND_FUNC_OFFSET_HOOK(SceBt_sub_22999C8, KERNEL_PID,
 		SceBt_modinfo.modid, 0, 0x22999C8 - 0x2280000, 1);
 
-	/* Patch PAD Type */
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_ksceCtrlGetControllerPortInfo, KERNEL_PID,
-		"SceCtrl", TAI_ANY_LIBRARY, 0xF11D0D30);
-
-	/* Patch Battery level */
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlGetBatteryInfo, KERNEL_PID,
-		"SceCtrl", TAI_ANY_LIBRARY, 0x8F9B1CE5);
-
 	/* SceCtrl hooks (needed for PS4 remote play) */
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_sub_17C107C, KERNEL_PID,
+		SceCtrl_modinfo.modid, 0, 0x17C107C - 0x17C0000, 1);
+
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlPeekBufferPositive2, KERNEL_PID,
 		"SceCtrl", TAI_ANY_LIBRARY, 0x15F81E8C);
 
@@ -739,7 +881,7 @@ int module_start(SceSize argc, const void *args)
 
 	return SCE_KERNEL_START_SUCCESS;
 
-error_find_scebt:
+error_find_module:
 	return SCE_KERNEL_START_FAILED;
 }
 
@@ -765,8 +907,8 @@ int module_stop(SceSize argc, const void *args)
 	}
 
 	UNBIND_FUNC_HOOK(SceBt_sub_22999C8);
-	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlGetControllerPortInfo);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlGetBatteryInfo);
+	release_virtual_controller_driver();
+	UNBIND_FUNC_HOOK(SceCtrl_sub_17C107C);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositive2);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferPositive2);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositiveExt2);
