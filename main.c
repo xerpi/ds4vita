@@ -23,24 +23,6 @@
 
 #define abs(x) (((x) < 0) ? -(x) : (x))
 
-typedef struct {
-	int (*readButtons)(int port, SceCtrlData *pad_data, int count);
-	int (*setActuator)(int port, const SceCtrlActuator* pState);
-	int (*getBatteryInfo)(int port, SceUInt8 *batt);
-	int (*disconnect)(int port);
-	int (*setTurnOffInterval)(int port);
-	int (*getActiveControllerPort)(void);
-	int (*changePortAssign)(int port1, int port2);
-	int (*unk0)(void); // SceCtrlForDriver_69E45836 equivalent
-	int (*getControllerPortInfo)(SceCtrlPortInfo *info);
-	int (*setLightBar)(int port, SceUInt8 r, SceUInt8 g, SceUInt8 b);
-	int (*resetLightBar)(int port);
-	int (*unk1)(int port); // SceCtrlForDriver_B26C2231 equivalent
-	int (*singleControllerMode)(int port);
-} SceCtrlVirtualControllerDriver;
-
-int ksceCtrlRegisterVirtualControllerDriver(SceCtrlVirtualControllerDriver *driver);
-
 struct ds4_input_report {
 	unsigned char report_id;
 	unsigned char left_x;
