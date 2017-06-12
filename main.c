@@ -114,7 +114,10 @@ static struct ds4_input_report ds4_input;
 	static SceUID name##_hook_uid = -1; \
 	static int name##_hook_func(__VA_ARGS__)
 
-static SceUID SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid = -1;
+#define DECL_DATA_INJECT(name) \
+	static SceUID name##_patch_uid = -1
+
+DECL_DATA_INJECT(SceCtrl_ksceCtrlRegisterVirtualControllerDriver);
 
 static int read_buttons(int port, SceCtrlData *pad_data, int count)
 {
@@ -764,6 +767,10 @@ void _start() __attribute__ ((weak, alias ("module_start")));
 	name##_hook_uid = taiHookFunctionExportForKernel((pid), \
 		&name##_ref, (module), (lib_nid), (func_nid), name##_hook_func)
 
+#define PATCH_DATA(name, pid, modid, segidx, offset, data, size) \
+	name##_patch_uid = taiInjectDataForKernel((pid), \
+		(modid), (segidx), (offset), (data), (size))
+
 int module_start(SceSize argc, const void *args)
 {
 	int ret;
@@ -793,8 +800,8 @@ int module_start(SceSize argc, const void *args)
 		SceBt_modinfo.modid, 0, 0x22999C8 - 0x2280000, 1);
 
 	/* SceCtrl hooks (needed for PS4 remote play) */
-	char nop[0x2] = "\x00\xBF";
-	SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid = taiInjectDataForKernel(KERNEL_PID,
+	uint8_t nop[2] = { 0x00, 0xBF };
+	PATCH_DATA(SceCtrl_ksceCtrlRegisterVirtualControllerDriver, KERNEL_PID,
 		SceCtrl_modinfo.modid, 0, 0x17C5B2A - 0x17C0000, nop, 2);
 
 	BIND_FUNC_OFFSET_HOOK(SceCtrl_sub_17C107C, KERNEL_PID,
@@ -861,6 +868,13 @@ error_find_module:
 		} \
 	} while(0)
 
+#define UNPATCH_DATA(name) \
+	do { \
+		if (name##_patch_uid > 0) { \
+			taiInjectReleaseForKernel(name##_patch_uid); \
+		} \
+	} while(0)
+
 int module_stop(SceSize argc, const void *args)
 {
 	SceUInt timeout = 0xFFFFFFFF;
@@ -876,9 +890,7 @@ int module_stop(SceSize argc, const void *args)
 	}
 
 	UNBIND_FUNC_HOOK(SceBt_sub_22999C8);
-	if (SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid > 0) {
-		taiInjectReleaseForKernel(SceCtrl_ksceCtrlRegisterVirtualControllerDriver_patch_uid);;
-	}
+	UNPATCH_DATA(SceCtrl_ksceCtrlRegisterVirtualControllerDriver);
 	UNBIND_FUNC_HOOK(SceCtrl_sub_17C107C);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositive2);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferPositive2);
