@@ -47,7 +47,7 @@ set_target_properties(${PROJECT_NAME}.elf
 
 add_custom_target(${PROJECT_NAME}.skprx ALL
 	COMMAND vita-elf-create -e ${CMAKE_SOURCE_DIR}/${PROJECT_NAME}.yml ${PROJECT_NAME}.elf ${PROJECT_NAME}.velf
-	COMMAND vita-make-fself ${PROJECT_NAME}.velf ${PROJECT_NAME}.skprx
+	COMMAND vita-make-fself -c ${PROJECT_NAME}.velf ${PROJECT_NAME}.skprx
 )
 add_dependencies(${PROJECT_NAME}.skprx ${PROJECT_NAME}.elf)
 
