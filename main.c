@@ -7,7 +7,13 @@
 #include <psp2/touch.h>
 #include <psp2/motion.h>
 #include <taihen.h>
+#include <math.h>
 #include "log.h"
+
+/*
+ * Needed by newlib's libm.
+ */
+int __errno;
 
 #define DS4_VID   0x054C
 #define DS4_PID   0x05C4
@@ -15,7 +21,8 @@
 
 #define DS4_TOUCHPAD_W 1920
 #define DS4_TOUCHPAD_H 940
-#define DS4_ANALOG_THRESHOLD 3
+#define DS4_JOYSTICK_THRESHOLD 5
+#define DS4_TRIGGER_THRESHOLD 0
 
 #define VITA_FRONT_TOUCHSCREEN_W 1920
 #define VITA_FRONT_TOUCHSCREEN_H 1080
@@ -251,8 +258,10 @@ DECL_FUNC_HOOK(SceCtrl_sceCtrlGetBatteryInfo, int port, SceUInt8 *batt)
 
 static void patch_ctrl_data(const struct ds4_input_report *ds4, SceCtrlData *pad_data)
 {
+	signed char ldx, ldy, rdx, rdy;
 	unsigned int buttons = 0;
-	int analog_moved = 0;
+	int left_js_moved = 0;
+	int right_js_moved = 0;
 
 	if (ds4->cross)
 		buttons |= SCE_CTRL_CROSS;
@@ -292,37 +301,39 @@ static void patch_ctrl_data(const struct ds4_input_report *ds4, SceCtrlData *pad
 	if (ds4->options)
 		buttons |= SCE_CTRL_START;
 
-	if ((abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD) ||
-	    (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD) ||
-	    (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD) ||
-	    (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD) ||
-	    ds4->l_trigger > DS4_ANALOG_THRESHOLD ||
-	    ds4->r_trigger > DS4_ANALOG_THRESHOLD) {
-		analog_moved = 1;
+	ldx = ds4->left_x - 128;
+	ldy = ds4->left_y - 128;
+	rdx = ds4->right_x - 128;
+	rdy = ds4->right_y - 128;
+
+	if (sqrtf(ldx * ldx + ldy * ldy) > DS4_JOYSTICK_THRESHOLD)
+		left_js_moved = 1;
+
+	if (sqrtf(rdx * rdx + rdy * rdy) > DS4_JOYSTICK_THRESHOLD)
+		right_js_moved = 1;
+
+	if (left_js_moved) {
+		pad_data->lx = ds4->left_x;
+		pad_data->ly = ds4->left_y;
 	}
 
-	if (abs(ds4->left_x - 128) > DS4_ANALOG_THRESHOLD)
-		pad_data->lx = ds4->left_x;
-
-	if (abs(ds4->left_y - 128) > DS4_ANALOG_THRESHOLD)
-		pad_data->ly = ds4->left_y;
-
-	if (abs(ds4->right_x - 128) > DS4_ANALOG_THRESHOLD)
+	if (right_js_moved) {
 		pad_data->rx = ds4->right_x;
-
-	if (abs(ds4->right_y - 128) > DS4_ANALOG_THRESHOLD)
 		pad_data->ry = ds4->right_y;
+	}
 
-	if (ds4->l_trigger > DS4_ANALOG_THRESHOLD)
+	if (ds4->l_trigger > DS4_TRIGGER_THRESHOLD)
 		pad_data->lt = ds4->l_trigger;
 
-	if (ds4->r_trigger > DS4_ANALOG_THRESHOLD)
+	if (ds4->r_trigger > DS4_TRIGGER_THRESHOLD)
 		pad_data->rt = ds4->r_trigger;
 
 	if (ds4->ps)
 		ksceCtrlSetButtonEmulation(0, 0, 0, SCE_CTRL_INTERCEPTED, 16);
 
-	if (buttons != 0 || analog_moved)
+	if (buttons != 0 || left_js_moved || right_js_moved ||
+	    ds4->l_trigger > DS4_TRIGGER_THRESHOLD ||
+	    ds4->r_trigger > DS4_TRIGGER_THRESHOLD)
 		ksceKernelPowerTick(0);
 
 	pad_data->buttons |= buttons;
