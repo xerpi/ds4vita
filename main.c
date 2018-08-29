@@ -282,14 +282,14 @@ static void patch_ctrl_data(const struct ds4_input_report *ds4, SceCtrlData *pad
 		buttons |= SCE_CTRL_LEFT;
 
 	if (ds4->l1)
-		buttons |= SCE_CTRL_L1;
+		buttons |= SCE_CTRL_LTRIGGER;
 	if (ds4->r1)
-		buttons |= SCE_CTRL_R1;
+		buttons |= SCE_CTRL_RTRIGGER;
 
 	if (ds4->l2)
-		buttons |= SCE_CTRL_LTRIGGER;
+		buttons |= SCE_CTRL_L1;
 	if (ds4->r2)
-		buttons |= SCE_CTRL_RTRIGGER;
+		buttons |= SCE_CTRL_R1;
 
 	if (ds4->l3)
 		buttons |= SCE_CTRL_L3;
