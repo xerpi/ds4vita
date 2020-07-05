@@ -27,6 +27,9 @@ int __errno;
 #define VITA_FRONT_TOUCHSCREEN_W 1920
 #define VITA_FRONT_TOUCHSCREEN_H 1080
 
+#define VITA_BACK_TOUCHSCREEN_W 1920
+#define VITA_BACK_TOUCHSCREEN_H 890
+
 #define EVF_EXIT	(1 << 0)
 
 #define abs(x) (((x) < 0) ? -(x) : (x))
@@ -122,6 +125,9 @@ struct ds4_input_report {
 	unsigned int finger2_activelow : 1;
 	unsigned int finger2_x         : 12;
 	unsigned int finger2_y         : 12;
+
+	unsigned int l2_id			   : 8;
+	unsigned int r2_id			   : 8;
 
 } __attribute__((packed, aligned(32)));
 
@@ -391,26 +397,54 @@ static void patch_touch_data(SceUInt32 port, SceTouchData *pData, SceUInt32 nBuf
 {
 	unsigned int i;
 
-	if (port != SCE_TOUCH_PORT_FRONT)
+	if (port != SCE_TOUCH_PORT_FRONT && port != SCE_TOUCH_PORT_BACK)
 		return;
 
 	for (i = 0; i < nBufs; i++) {
 		unsigned int num_reports = 0;
 
-		if (!ds4->finger1_activelow) {
-			pData->report[0].id = ds4->finger1_id;
-			pData->report[0].x = (ds4->finger1_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
-			pData->report[0].y = (ds4->finger1_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
-			num_reports++;
-		}
+		if (port == SCE_TOUCH_PORT_FRONT) {
+			if (!ds4->finger1_activelow) {
+				pData->report[0].id = ds4->finger1_id;
+				pData->report[0].x = (ds4->finger1_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
+				pData->report[0].y = (ds4->finger1_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
+				num_reports++;
+			}
 
-		if (!ds4->finger2_activelow) {
-			pData->report[1].id = ds4->finger2_id;
-			pData->report[1].x = (ds4->finger2_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
-			pData->report[1].y = (ds4->finger2_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
-			num_reports++;
+			if (!ds4->finger2_activelow) {
+				pData->report[1].id = ds4->finger2_id;
+				pData->report[1].x = (ds4->finger2_x * VITA_FRONT_TOUCHSCREEN_W) / DS4_TOUCHPAD_W;
+				pData->report[1].y = (ds4->finger2_y * VITA_FRONT_TOUCHSCREEN_H) / DS4_TOUCHPAD_H;
+				num_reports++;
+			}
 		}
+		else {
 
+			if (ds4->l2 && ds4->r2) {
+				pData->report[0].id = ds4->l2_id;
+				pData->report[0].x = (VITA_BACK_TOUCHSCREEN_W * .25) ;
+				pData->report[0].y = (VITA_BACK_TOUCHSCREEN_H * .2);
+				
+				pData->report[1].id = ds4->r2_id;
+				pData->report[1].x = (VITA_BACK_TOUCHSCREEN_W * .75);
+				pData->report[1].y = (VITA_BACK_TOUCHSCREEN_H * .2);
+				
+				num_reports+=2;
+			}
+			else if (ds4->l2) {
+				pData->report[0].id = ds4->l2_id;
+				pData->report[0].x = (VITA_BACK_TOUCHSCREEN_W * .25);
+				pData->report[0].y = (VITA_BACK_TOUCHSCREEN_H * .2);
+				num_reports++;
+			}
+			else if (ds4->r2) {
+				pData->report[0].id = ds4->r2_id;
+				pData->report[0].x = (VITA_BACK_TOUCHSCREEN_W * .75);
+				pData->report[0].y = (VITA_BACK_TOUCHSCREEN_H * .2);
+				num_reports++;
+			}
+		}
+		
 		if (num_reports > 0) {
 			ksceKernelPowerTick(0);
 			pData->reportNum = num_reports;
