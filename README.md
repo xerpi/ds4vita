@@ -1,23 +1,23 @@
-# ds4vita
+#  ds34vita
 
-**Download**: https://github.com/xerpi/ds4vita/releases
+- Combines functionality of [xerpi](https://github.com/xerpi "xerpi")'s [ds4vita](https://github.com/xerpi/ds4vita "ds4vita") and [ds3vita](https://github.com/xerpi/ds3vita "ds4vita")
+- Alows to use up to two controllers at the same time
+- Has proper (PS TV way) buttons mapping 
+- Has integration with [remaPSV2](https://github.com/MERLev/remaPSV2 "remaPSV2")
 
-**Enable the plugin:**
+### Install
 
-1. Add ds4vita.skprx to taiHEN's config (ux0:/tai/config.txt):
+1. Copy **ds34vita.skprx** to *ur0:/tai/* folder
+2. Add **ds34vita.skprx** to taiHEN's config (*ur0:/tai/config.txt*) under **KERNEL** section:
 	```
 	*KERNEL
-	ux0:tai/ds4vita.skprx
+	ux0:tai/ds34vita.skprx
 	```
-2. You need to refresh the config.txt by rebooting or through VitaShell.
 
-**Using it for the first time (pairing the controller):**
+### Download: 
+https://github.com/MERLev/ds34vita/releases
 
-1. Go to Settings -> Devices -> Bluetooth Devices
-2. Press SHARE+PS on the DS4 for about 3-4 seconds, until the lightbar blinks very quickly
-3. The DS4 will then connect and be paired (don't press over it when it appears)
-
-**Using it once paired (see above):**
-1. Just press the PS button and it will connect to the Vita
-
-**Note**: If you use Mai, don't put the plugin inside ux0:/plugins because Mai will load all stuff you put in there...
+### Credits
+Based on [ds4vita](https://github.com/xerpi/ds4vita "ds4vita code") by [xerpi](https://github.com/xerpi "xerpi")\
+Based on [ds3vita](https://github.com/xerpi/ds3vita "ds3vita code") by [xerpi](https://github.com/xerpi "xerpi")\
+All testing done by [bosshunter](https://github.com/bosshunter)
