@@ -48,11 +48,15 @@ int __errno;
 
 #define BIND_FUNC_OFFSET_HOOK(name, pid, modid, segidx, offset, thumb) \
 	name##_hook_uid = taiHookFunctionOffsetForKernel((pid), \
-		&name##_ref, (modid), (segidx), (offset), thumb, name##_hook_func)
+		&name##_ref, (modid), (segidx), (offset), thumb, name##_hook_func); \
+	if (name##_hook_uid < 0) \
+		LOG("Hooking offset failed for "#name" : %08X", name##_hook_uid);
 
 #define BIND_FUNC_EXPORT_HOOK(name, pid, module, lib_nid, func_nid) \
 	name##_hook_uid = taiHookFunctionExportForKernel((pid), \
-		&name##_ref, (module), (lib_nid), (func_nid), name##_hook_func)
+		&name##_ref, (module), (lib_nid), (func_nid), name##_hook_func); \
+	if (name##_hook_uid < 0) \
+		LOG("Hooking export failed for "#name" : %08X", name##_hook_uid);
 
 #define UNBIND_FUNC_HOOK(name) \
 	do { \
@@ -715,58 +719,48 @@ static void patch_ctrl_data_ds3(const struct ds3_input_report *ds3, SceCtrlData 
 
 static void patch_ctrl_data_all(const struct ControllerStats* controller,
 				     int port, SceCtrlData *pad_data, int count,
-					 int space, int logic, int triggers)
+					 int logic, int triggers)
 {
 	unsigned int i;
 	for (i = 0; i < count; i++) {
-		if (space == SPACE_USER){
-			SceCtrlData k_data;
-			ksceKernelMemcpyUserToKernel(&k_data, (uintptr_t)pad_data, sizeof(k_data));
-			if (controller->type == SCE_CTRL_TYPE_DS4)
-				patch_ctrl_data_ds4(&controller->report_ds4, &k_data, port, logic, triggers);
-			else 
-				patch_ctrl_data_ds3(&controller->report_ds3, &k_data, port, logic, triggers);
-			ksceKernelMemcpyKernelToUser((uintptr_t)pad_data, &k_data, sizeof(k_data));
-		} else {
-			if (controller->type == SCE_CTRL_TYPE_DS4)
-				patch_ctrl_data_ds4(&controller->report_ds4, pad_data, port, logic, triggers);
-			else 
-				patch_ctrl_data_ds3(&controller->report_ds3, pad_data, port, logic, triggers);
-		}
+		if (controller->type == SCE_CTRL_TYPE_DS4)
+			patch_ctrl_data_ds4(&controller->report_ds4, pad_data, port, logic, triggers);
+		else 
+			patch_ctrl_data_ds3(&controller->report_ds3, pad_data, port, logic, triggers);
 		pad_data++;
 	}
 }
 
-#define DECL_FUNC_HOOK_PATCH_CTRL(name, space, logic, triggers) \
+#define DECL_FUNC_HOOK_PATCH_CTRL(name, logic, triggers) \
 	DECL_FUNC_HOOK(SceCtrl_##name, int port, SceCtrlData *pad_data, int count) \
 	{ \
 		int ret; \
 		if (port == 0 && controllers[1].connected){ \
 			ret = TAI_CONTINUE(int, SceCtrl_ ##name##_ref, 0, pad_data, count); \
-			patch_ctrl_data_all(&controllers[1], port, pad_data, count, (space), (logic), (triggers)); \
+			patch_ctrl_data_all(&controllers[1], port, pad_data, count, (logic), (triggers)); \
 			return ret; \
 		} else if (controllers[port].connected){ \
 			ret = TAI_CONTINUE(int, SceCtrl_ ##name##_ref, 0, pad_data, count); \
-			patch_ctrl_data_all(&controllers[port], port, pad_data, count, (space), (logic), (triggers)); \
+			patch_ctrl_data_all(&controllers[port], port, pad_data, count, (logic), (triggers)); \
 			return ret; \
 		} \
 		return TAI_CONTINUE(int, SceCtrl_ ##name##_ref, port, pad_data, count); \
 	} \
 
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlPeekBufferPositiveExt,  SPACE_USER,   LOGIC_POSITIVE, TRIGGERS_NONEXT)
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlReadBufferPositiveExt,  SPACE_USER,   LOGIC_POSITIVE, TRIGGERS_NONEXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferPositive,    	LOGIC_POSITIVE, TRIGGERS_NONEXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferPositive,    	LOGIC_POSITIVE, TRIGGERS_NONEXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferNegative,    	LOGIC_NEGATIVE, TRIGGERS_NONEXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferNegative,    	LOGIC_NEGATIVE, TRIGGERS_NONEXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferPositiveExt, 	LOGIC_POSITIVE, TRIGGERS_NONEXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferPositiveExt,	LOGIC_POSITIVE, TRIGGERS_NONEXT)
 
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlPeekBufferPositive2,    SPACE_USER,   LOGIC_POSITIVE, TRIGGERS_EXT)
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlReadBufferPositive2,    SPACE_USER,   LOGIC_POSITIVE, TRIGGERS_EXT)
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlPeekBufferNegative2,    SPACE_USER,   LOGIC_NEGATIVE, TRIGGERS_EXT)
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlReadBufferNegative2,    SPACE_USER,   LOGIC_NEGATIVE, TRIGGERS_EXT)
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlPeekBufferPositiveExt2, SPACE_USER,   LOGIC_POSITIVE, TRIGGERS_EXT)
-DECL_FUNC_HOOK_PATCH_CTRL(sceCtrlReadBufferPositiveExt2, SPACE_USER,   LOGIC_POSITIVE, TRIGGERS_EXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferPositive2,    	LOGIC_POSITIVE, TRIGGERS_EXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferPositive2,    	LOGIC_POSITIVE, TRIGGERS_EXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferNegative2,    	LOGIC_NEGATIVE, TRIGGERS_EXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferNegative2,    	LOGIC_NEGATIVE, TRIGGERS_EXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferPositiveExt2, 	LOGIC_POSITIVE, TRIGGERS_EXT)
+DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferPositiveExt2, 	LOGIC_POSITIVE, TRIGGERS_EXT)
 
-DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferPositive,    SPACE_KERNEL, LOGIC_POSITIVE, TRIGGERS_NONEXT)
-DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferPositive,    SPACE_KERNEL, LOGIC_POSITIVE, TRIGGERS_NONEXT)
-DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlPeekBufferNegative,    SPACE_KERNEL, LOGIC_NEGATIVE, TRIGGERS_NONEXT)
-DECL_FUNC_HOOK_PATCH_CTRL(ksceCtrlReadBufferNegative,    SPACE_KERNEL, LOGIC_NEGATIVE, TRIGGERS_NONEXT)
 
 static int rescaleTouchCoordinate(int ds4coord, int ds4size, int ds4dead, int vitasize){
 	return clamp(((ds4coord - ds4dead) * vitasize) / (ds4size - ds4dead * 2), 0, vitasize - 1);
@@ -1154,15 +1148,15 @@ void _start() __attribute__ ((weak, alias ("module_start")));
 int module_start(SceSize argc, const void *args)
 {
 	int ret;
-	tai_module_info_t SceBt_modinfo;
+	tai_module_info_t modInfo;
 
 	log_reset();
 	memset(controllers, 0, sizeof(controllers));
 
 	LOG("ds34vita by xerpi\n");
 
-	SceBt_modinfo.size = sizeof(SceBt_modinfo);
-	ret = taiGetModuleInfoForKernel(KERNEL_PID, "SceBt", &SceBt_modinfo);
+	modInfo.size = sizeof(modInfo);
+	ret = taiGetModuleInfoForKernel(KERNEL_PID, "SceBt", &modInfo);
 	if (ret < 0) {
 		LOG("Error finding SceBt module\n");
 		goto error_find_scebt;
@@ -1170,15 +1164,15 @@ int module_start(SceSize argc, const void *args)
 
 	/* SceBt hooks */
 	BIND_FUNC_OFFSET_HOOK(SceBt_sub_22999C8, KERNEL_PID,
-		SceBt_modinfo.modid, 0, 0x22999C8 - 0x2280000, 1);
+		modInfo.modid, 0, 0x22999C8 - 0x2280000, 1);
 
 	
 	SceBt_sub_22947E4_hook_uid = taiHookFunctionOffsetForKernel(KERNEL_PID,
-		&SceBt_sub_22947E4_ref, SceBt_modinfo.modid, 0,
+		&SceBt_sub_22947E4_ref, modInfo.modid, 0,
 		0x22947E4 - 0x2280000, 1, SceBt_sub_22947E4_hook_func);
 
 	// BIND_FUNC_OFFSET_HOOK(SceBt_sub_22947E4, KERNEL_PID,
-	// 	SceBt_modinfo.modid, 0, 0x22947E4 - 0x2280000, 1);
+	// 	modInfo.modid, 0, 0x22947E4 - 0x2280000, 1);
 
 	/* Patch PAD Type */
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_ksceCtrlGetControllerPortInfo, KERNEL_PID,
@@ -1188,41 +1182,26 @@ int module_start(SceSize argc, const void *args)
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlGetBatteryInfo, KERNEL_PID,
 		"SceCtrl", TAI_ANY_LIBRARY, 0x8F9B1CE5);
 
-	/* SceCtrl hooks:
-	 * sceCtrlPeekBufferPositive -> ksceCtrlPeekBufferPositive
-	 * sceCtrlReadBufferPositive -> ksceCtrlReadBufferPositive
-	 * sceCtrlPeekBufferNegative -> ksceCtrlPeekBufferNegative
-	 * sceCtrlReadBufferNegative -> ksceCtrlReadBufferNegative
-	 * sceCtrlPeekBufferPositiveExt -> none
-	 * sceCtrlReadBufferPositiveExt -> none
-	 * 
-	 * sceCtrlPeekBufferPositive2 -> none
-	 * sceCtrlReadBufferPositive2 -> none
-	 * sceCtrlPeekBufferNegative2 -> none
-	 * sceCtrlReadBufferNegative2 -> none
-	 * sceCtrlPeekBufferPositiveExt2 -> none
-	 * sceCtrlReadBufferPositiveExt2 -> none
-	 * 
-	 * ksceCtrlPeekBufferPositive -> none
-	 * ksceCtrlReadBufferPositive -> none
-	 * ksceCtrlPeekBufferNegative -> none
-	 * ksceCtrlReadBufferNegative -> none
-	 */
-
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlPeekBufferPositiveExt, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0xA59454D3);
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlReadBufferPositiveExt, KERNEL_PID,	"SceCtrl", TAI_ANY_LIBRARY, 0xE2D99296);
-
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlPeekBufferPositive2, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x15F81E8C);
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlReadBufferPositive2, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0xC4226A3E);
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlPeekBufferNegative2, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x81A89660);
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlReadBufferNegative2, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x27A0C5FB);
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlPeekBufferPositiveExt2, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x860BF292);
-	BIND_FUNC_EXPORT_HOOK(SceCtrl_sceCtrlReadBufferPositiveExt2, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0xA7178860);
+	modInfo.size = sizeof(modInfo);
+	ret = taiGetModuleInfoForKernel(KERNEL_PID, "SceCtrl", &modInfo);
+	if (ret < 0) {
+		LOG("Error finding SceBt module\n");
+		goto error_find_scebt;
+	}
 
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_ksceCtrlPeekBufferPositive, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0xEA1D3A34);
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_ksceCtrlReadBufferPositive, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x9B96A1AA);
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_ksceCtrlPeekBufferNegative, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x19895843);
 	BIND_FUNC_EXPORT_HOOK(SceCtrl_ksceCtrlReadBufferNegative, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x8D4E0DD1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlPeekBufferPositiveExt, KERNEL_PID, modInfo.modid, 0, 0x3928 | 1, 1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlReadBufferPositiveExt, KERNEL_PID, modInfo.modid, 0, 0x3BCC | 1, 1);
+
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlPeekBufferPositive2, KERNEL_PID, modInfo.modid, 0, 0x3EF8 | 1, 1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlReadBufferPositive2, KERNEL_PID, modInfo.modid, 0, 0x449C | 1, 1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlPeekBufferNegative2, KERNEL_PID, modInfo.modid, 0, 0x41C8 | 1, 1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlReadBufferNegative2, KERNEL_PID, modInfo.modid, 0, 0x47F0 | 1, 1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlPeekBufferPositiveExt2, KERNEL_PID, modInfo.modid, 0, 0x4B48 | 1, 1);
+	BIND_FUNC_OFFSET_HOOK(SceCtrl_ksceCtrlReadBufferPositiveExt2, KERNEL_PID, modInfo.modid, 0, 0x4E14 | 1, 1);
 
 	/* SceTouch hooks */
 	BIND_FUNC_EXPORT_HOOK(SceTouch_ksceTouchPeek, KERNEL_PID, "SceTouch", TAI_ANY_LIBRARY, 0xBAD1960B);
@@ -1288,20 +1267,20 @@ int module_stop(SceSize argc, const void *args)
 	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlGetControllerPortInfo);
 	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlGetBatteryInfo);
 
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositiveExt);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferPositiveExt);
-
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositive2);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferPositive2);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferNegative2);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferNegative2);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlPeekBufferPositiveExt2);
-	UNBIND_FUNC_HOOK(SceCtrl_sceCtrlReadBufferPositiveExt2);
 
 	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlReadBufferNegative);
 	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlPeekBufferPositive);
 	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlReadBufferPositive);
 	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlPeekBufferNegative);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlPeekBufferPositiveExt);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlReadBufferPositiveExt);
+
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlPeekBufferPositive2);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlReadBufferPositive2);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlPeekBufferNegative2);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlReadBufferNegative2);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlPeekBufferPositiveExt2);
+	UNBIND_FUNC_HOOK(SceCtrl_ksceCtrlReadBufferPositiveExt2);
 
 	UNBIND_FUNC_HOOK(SceTouch_ksceTouchPeek);
 	UNBIND_FUNC_HOOK(SceTouch_ksceTouchPeekRegion);
