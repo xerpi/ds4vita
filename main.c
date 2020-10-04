@@ -19,7 +19,7 @@ int __errno;
 #define DS3_VID 0x054C
 #define DS3_PID 0x0268
 
-#define DS3_JOYSTICK_THRESHOLD 5
+#define DS3_JOYSTICK_THRESHOLD 50
 #define DS3_TRIGGER_THRESHOLD 1
 
 #define DS4_VID   0x054C
@@ -30,7 +30,7 @@ int __errno;
 #define DS4_TOUCHPAD_H 940
 #define DS4_TOUCHPAD_W_DEAD 60
 #define DS4_TOUCHPAD_H_DEAD 120
-#define DS4_JOYSTICK_THRESHOLD 5
+#define DS4_JOYSTICK_THRESHOLD 50
 #define DS4_TRIGGER_THRESHOLD 0
 
 #define VITA_FRONT_TOUCHSCREEN_W 1920
@@ -486,8 +486,6 @@ static void patch_ctrl_data_ds4(const struct ds4_input_report *ds4, SceCtrlData 
 {
 	signed char ldx, ldy, rdx, rdy;
 	unsigned int buttons = 0;
-	int left_js_moved = 0;
-	int right_js_moved = 0;
 
 	if (ds4->cross)
 		buttons |= SCE_CTRL_CROSS;
@@ -562,30 +560,22 @@ static void patch_ctrl_data_ds4(const struct ds4_input_report *ds4, SceCtrlData 
 	rdx = ds4->right_x - 127;
 	rdy = ds4->right_y - 127;
 
-	if (sqrtf(ldx * ldx + ldy * ldy) > DS4_JOYSTICK_THRESHOLD)
-		left_js_moved = 1;
-
-	if (sqrtf(rdx * rdx + rdy * rdy) > DS4_JOYSTICK_THRESHOLD)
-		right_js_moved = 1;
-
 	if (port != 0)
 		pad_data->lx = pad_data->ly = pad_data->rx = pad_data->ry = 127;
 
-	if (left_js_moved) {
-		pad_data->lx = clamp(pad_data->lx + ds4->left_x - 127, 0, 255);
-		pad_data->ly = clamp(pad_data->ly + ds4->left_y - 127, 0, 255);
-	}
+	pad_data->lx = clamp(pad_data->lx + ds4->left_x - 127, 0, 255);
+	pad_data->ly = clamp(pad_data->ly + ds4->left_y - 127, 0, 255);
 
-	if (right_js_moved) {
-		pad_data->rx = clamp(pad_data->rx + ds4->right_x - 127, 0, 255);
-		pad_data->ry = clamp(pad_data->ry + ds4->right_y - 127, 0, 255);
-	}
+	pad_data->rx = clamp(pad_data->rx + ds4->right_x - 127, 0, 255);
+	pad_data->ry = clamp(pad_data->ry + ds4->right_y - 127, 0, 255);
 
 	if (ds4->ps)
 		ksceCtrlSetButtonEmulation(0, 0, 0, SCE_CTRL_INTERCEPTED, 16);
 
-	if (buttons != 0 || left_js_moved || right_js_moved ||
-	    ds4->l_trigger > DS4_TRIGGER_THRESHOLD ||
+	if (buttons != 0 || 
+		sqrtf(ldx * ldx + ldy * ldy) > DS4_JOYSTICK_THRESHOLD ||
+		sqrtf(rdx * rdx + rdy * rdy) > DS4_JOYSTICK_THRESHOLD ||
+		ds4->l_trigger > DS4_TRIGGER_THRESHOLD ||
 	    ds4->r_trigger > DS4_TRIGGER_THRESHOLD)
 		ksceKernelPowerTick(0);
 
@@ -604,8 +594,6 @@ static void patch_ctrl_data_ds3(const struct ds3_input_report *ds3, SceCtrlData 
 {
 	signed char ldx, ldy, rdx, rdy;
 	unsigned int buttons = 0;
-	int left_js_moved = 0;
-	int right_js_moved = 0;
 
 	if (ds3->cross)
 		buttons |= SCE_CTRL_CROSS;
@@ -679,29 +667,21 @@ static void patch_ctrl_data_ds3(const struct ds3_input_report *ds3, SceCtrlData 
 	rdx = ds3->right_x - 128;
 	rdy = ds3->right_y - 128;
 
-	if (sqrtf(ldx * ldx + ldy * ldy) > DS3_JOYSTICK_THRESHOLD)
-		left_js_moved = 1;
-
- 	if (sqrtf(rdx * rdx + rdy * rdy) > DS3_JOYSTICK_THRESHOLD)
-		right_js_moved = 1;
-
 	if (port != 0)
 		pad_data->lx = pad_data->ly = pad_data->rx = pad_data->ry = 127;
 
-	if (left_js_moved) {
-		pad_data->lx = clamp(pad_data->lx + ds3->left_x - 127, 0, 255);
-		pad_data->ly = clamp(pad_data->ly + ds3->left_y - 127, 0, 255);
-	}
+	pad_data->lx = clamp(pad_data->lx + ds3->left_x - 127, 0, 255);
+	pad_data->ly = clamp(pad_data->ly + ds3->left_y - 127, 0, 255);
 
-	if (right_js_moved) {
-		pad_data->rx = clamp(pad_data->rx + ds3->right_x - 127, 0, 255);
-		pad_data->ry = clamp(pad_data->ry + ds3->right_y - 127, 0, 255);
-	}
+	pad_data->rx = clamp(pad_data->rx + ds3->right_x - 127, 0, 255);
+	pad_data->ry = clamp(pad_data->ry + ds3->right_y - 127, 0, 255);
 
 	if (ds3->ps)
 		ksceCtrlSetButtonEmulation(0, 0, 0, SCE_CTRL_INTERCEPTED, 16);
 
-	if (buttons != 0 || left_js_moved || right_js_moved ||
+	if (buttons != 0 ||
+		sqrtf(ldx * ldx + ldy * ldy) > DS3_JOYSTICK_THRESHOLD || 
+		sqrtf(rdx * rdx + rdy * rdy) > DS3_JOYSTICK_THRESHOLD ||
 	    ds3->L2_sens > DS3_TRIGGER_THRESHOLD ||
 	    ds3->R2_sens > DS3_TRIGGER_THRESHOLD)
 		ksceKernelPowerTick(0);
