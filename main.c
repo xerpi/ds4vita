@@ -785,8 +785,6 @@ static void patch_touch_data(SceUInt32 port, SceTouchData *pData, SceUInt32 nBuf
 			ksceKernelPowerTick(0);
 			pData->reportNum = num_reports;
 		}
-
-		pData++;
 	}
 }
 
