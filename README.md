@@ -7,29 +7,29 @@
 ### Install
 1. Copy **ds34vita.skprx** to *ur0:/tai/* folder
 2. Add **ds34vita.skprx** to taiHEN's config (*ur0:/tai/config.txt*) under **KERNEL** section:
-	```
-	*KERNEL
-	ux0:tai/ds34vita.skprx
-	```
+```
+*KERNEL
+ux0:tai/ds34vita.skprx
+```
 
 ### Download: 
 https://github.com/MERLev/ds34vita/releases
 
 ### Build
-	```
-	mkdir build
-	cd build
-	cmake ..
-	make
-	```
+```bash
+mkdir build
+cd build
+cmake ..
+make
+```
 
 ### Build as dependency
-	```
-	mkdir build
-	cd build
-	cmake ..
-	make install
-	```
+```bash
+mkdir build
+cd build
+cmake ..
+make install
+```
 **ds34vita-weak.yml** is used to create "weak" stubs for kernel.
 
 ### Credits
