@@ -2,6 +2,9 @@
 - Combines functionality of [xerpi](https://github.com/xerpi "xerpi")'s [ds4vita](https://github.com/xerpi/ds4vita "ds4vita") and [ds3vita](https://github.com/xerpi/ds3vita "ds4vita").
 - Alows to use up to two controllers at the same time.
 - Has proper (PS TV way) buttons mapping.
+- Fixed no-sleep bug
+- Fixed multitouch issues
+- Added deadzone for touchpanel (same as PS TV)
 - Allows [reVita](https://github.com/MERLev/reVita "reVita") integration.
 
 ### Install
