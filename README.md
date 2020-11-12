@@ -12,7 +12,7 @@
 2. Add **ds34vita.skprx** to taiHEN's config (*ur0:/tai/config.txt*) under **KERNEL** section:
 ```
 *KERNEL
-ux0:tai/ds34vita.skprx
+ur0:tai/ds34vita.skprx
 ```
 
 ### Download: 
