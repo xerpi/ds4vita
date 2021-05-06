@@ -33,6 +33,16 @@ int __errno;
 #define DS4_JOYSTICK_THRESHOLD 50
 #define DS4_TRIGGER_THRESHOLD 0
 
+#define DS5_VID 0x054C
+#define DS5_PID 0x0CE6
+
+#define DS5_TOUCHPAD_W 1920
+#define DS5_TOUCHPAD_H 1070
+#define DS5_TOUCHPAD_W_DEAD 60
+#define DS5_TOUCHPAD_H_DEAD 60
+#define DS5_JOYSTICK_THRESHOLD 50
+#define DS5_TRIGGER_THRESHOLD 0
+
 #define VITA_FRONT_TOUCHSCREEN_W 1920
 #define VITA_FRONT_TOUCHSCREEN_H 1080
 #define VITA_PORTS_NUM 5
@@ -208,6 +218,68 @@ struct ds4_input_report {
 
 } __attribute__((packed, aligned(32)));
 
+struct ds5_input_report {
+	unsigned char report_id;
+	unsigned char unk0;
+
+	unsigned char left_x;
+	unsigned char left_y;
+	unsigned char right_x;
+	unsigned char right_y;
+
+	unsigned char l_trigger;
+	unsigned char r_trigger;
+	unsigned char cnt1;
+
+	unsigned char dpad     : 4;
+	unsigned char square   : 1;
+	unsigned char cross    : 1;
+	unsigned char circle   : 1;
+	unsigned char triangle : 1;
+
+	unsigned char l1      : 1;
+	unsigned char r1      : 1;
+	unsigned char l2      : 1;
+	unsigned char r2      : 1;
+	unsigned char share   : 1;
+	unsigned char options : 1;
+	unsigned char l3      : 1;
+	unsigned char r3      : 1;
+
+	unsigned char ps   : 1;
+	unsigned char tpad : 1;
+	unsigned char cnt2 : 6;
+
+	unsigned char unk1[5];
+
+	signed short gyro_x;
+	signed short gyro_y;
+	signed short gyro_z;
+	signed short accel_x;
+	signed short accel_y;
+	signed short accel_z;
+
+	unsigned char unk2[5];
+
+	unsigned int finger1_id        : 7;
+	unsigned int finger1_activelow : 1;
+	unsigned int finger1_x         : 12;
+	unsigned int finger1_y         : 12;
+
+	unsigned int finger2_id        : 7;
+	unsigned int finger2_activelow : 1;
+	unsigned int finger2_x         : 12;
+	unsigned int finger2_y         : 12;
+
+	unsigned char unk3[12];
+
+	unsigned char battery_level : 4;
+	unsigned char usb_plugged   : 1;
+	unsigned char battery_full  : 1;
+	unsigned char padding       : 2;
+
+} __attribute__((packed, aligned(32)));
+
 enum{
 	SPACE_KERNEL,
 	SPACE_USER,
@@ -239,6 +311,7 @@ typedef struct ControllerStats{
 	union{
 		struct ds3_input_report report_ds3;
 		struct ds4_input_report report_ds4;
+		struct ds5_input_report report_ds5;
 	};
 }ControllerStats;
 
@@ -311,6 +384,11 @@ static void ds4_input_reset(ControllerStats* c)
 	memset(&c->report_ds4, 0, sizeof(c->report_ds4));
 }
 
+static void ds5_input_reset(ControllerStats* c)
+{
+	memset(&c->report_ds5, 0, sizeof(c->report_ds5));
+}
+
 static int is_ds3(const unsigned short vid_pid[2])
 {
 	return vid_pid[0] == DS3_VID && vid_pid[1] == DS3_PID;
@@ -320,6 +398,11 @@ static int is_ds4(const unsigned short vid_pid[2])
 {
 	return (vid_pid[0] == DS4_VID) &&
 		((vid_pid[1] == DS4_PID) || (vid_pid[1] == DS4_NEW_PID));
+}
+
+static int is_ds5(const unsigned short vid_pid[2])
+{
+	return vid_pid[0] == DS5_VID && vid_pid[1] == DS5_PID;
 }
 
 static inline void *mempool_alloc(unsigned int size)
@@ -439,6 +522,85 @@ static int ds4_send_0x11_report(unsigned int mac0, unsigned int mac1)
 	return 0;
 }
 
+static unsigned int calculate_crc(unsigned char *data, size_t len)
+{
+	unsigned int crc = 0xFFFFFFFF;
+
+	for (size_t i = 0; i < len; i++) {
+		unsigned char ch = data[i];
+		for (size_t j = 0; j < 8; j++) {
+			unsigned int b = (ch ^ crc) & 1;
+			crc >>= 1;
+			if (b) crc = crc ^ 0xEDB88320;
+			ch >>= 1;
+		}
+	}
+
+	return ~crc;
+}
+
+static int ds5_send_report(unsigned int mac0, unsigned int mac1, uint8_t flags, uint8_t report, size_t len, const void *data)
+{
+	SceBtHidRequest *req;
+	unsigned char *buf;
+
+	req = mempool_alloc(sizeof(*req));
+	if (!req) {
+		LOG("Error allocatin BT HID Request\n");
+		return -1;
+	}
+
+	if ((buf = mempool_alloc((len + 6) * sizeof(*buf))) == NULL) {
+		LOG("Memory allocation error (mesg array)\n");
+		return -1;
+	}
+
+	buf[0] = 0xA2;
+	buf[1] = report;
+	memcpy(buf + 2, data, len);
+	unsigned int crc = calculate_crc(buf, len + 2);
+	buf[len + 2] = crc >>  0;
+	buf[len + 3] = crc >>  8;
+	buf[len + 4] = crc >> 16;
+	buf[len + 5] = crc >> 24;
+
+	memset(req, 0, sizeof(*req));
+	req->type = 1; // 0xA2 -> type = 1
+	req->buffer = buf + 1;
+	req->length = len + 5;
+	req->next = req;
+
+	ksceBtHidTransfer(mac0, mac1, req);
+
+	mempool_free(buf);
+	mempool_free(req);
+
+	return 0;
+}
+
+static int ds5_send_0x31_report(unsigned int mac0, unsigned int mac1)
+{
+	unsigned char data[73] = {};
+	data[0]  = 0x02;
+	data[1]  = 0x03;
+	data[2]  = 0x14;
+	data[3]  = 0x00; // Motor right
+	data[4]  = 0x00; // Motor left
+	data[39] = 0x02;
+	data[42] = 0x02;
+	data[44] = 0x04; // LED flags
+	data[45] = 0x00; // R
+	data[46] = 0x00; // G
+	data[47] = 0xFF; // B
+
+	if (ds5_send_report(mac0, mac1, 0, 0x31, sizeof(data), data)) {
+		LOG("Status request error\n");
+		return -1;
+	}
+
+	return 0;
+}
+
 DECL_FUNC_HOOK(SceCtrl_ksceCtrlGetControllerPortInfo, SceCtrlPortInfo *info)
 {
 	int ret = TAI_CONTINUE(int, SceCtrl_ksceCtrlGetControllerPortInfo_ref, info);
@@ -459,27 +621,154 @@ DECL_FUNC_HOOK(SceCtrl_sceCtrlGetBatteryInfo, int port, SceUInt8 *batt)
 {
 	int ret = TAI_CONTINUE(int, SceCtrl_sceCtrlGetBatteryInfo_ref, port, batt);
 
-	if (controllers[port].connected && controllers[port].type == SCE_CTRL_TYPE_DS4) {
-		SceUInt8 k_batt;
-		ksceKernelMemcpyUserToKernel(&k_batt, (uintptr_t)batt, sizeof(k_batt));
+	if (controllers[port].connected) {
+		if (controllers[port].type == SCE_CTRL_TYPE_DS4) {
+			SceUInt8 k_batt;
+			ksceKernelMemcpyUserToKernel(&k_batt, (uintptr_t)batt, sizeof(k_batt));
 
-		if (controllers[port].report_ds4.usb_plugged) {
-			k_batt = controllers[port].report_ds4.battery_level <= 10 ? 0xEE : 0xEF;
-		} else {
-			if (controllers[port].report_ds4.battery_level == 0)
-				k_batt = 0;
-			else
-				k_batt = (controllers[port].report_ds4.battery_level / 2) + 1;
+			if (controllers[port].report_ds4.usb_plugged) {
+				k_batt = controllers[port].report_ds4.battery_level <= 10 ? 0xEE : 0xEF;
+			} else {
+				if (controllers[port].report_ds4.battery_level == 0)
+					k_batt = 0;
+				else
+					k_batt = (controllers[port].report_ds4.battery_level / 2) + 1;
 
-			if (k_batt > 5)
-				k_batt = 5;
+				if (k_batt > 5)
+					k_batt = 5;
+			}
+
+			ksceKernelMemcpyKernelToUser((uintptr_t)batt, &k_batt, sizeof(k_batt));
+			return 0;
+		} else if (controllers[port].type == SCE_CTRL_TYPE_VIRT) {
+			SceUInt8 k_batt;
+			ksceKernelMemcpyUserToKernel(&k_batt, (uintptr_t)batt, sizeof(k_batt));
+
+			if (controllers[port].report_ds5.usb_plugged) {
+				k_batt = controllers[port].report_ds5.battery_level <= 10 ? 0xEE : 0xEF;
+			} else {
+				if (controllers[port].report_ds5.battery_level == 0)
+					k_batt = 0;
+				else
+					k_batt = (controllers[port].report_ds5.battery_level / 2) + 1;
+
+				if (k_batt > 5 || controllers[port].report_ds5.battery_full)
+					k_batt = 5;
+			}
+
+			ksceKernelMemcpyKernelToUser((uintptr_t)batt, &k_batt, sizeof(k_batt));
+			return 0;
 		}
-
-		ksceKernelMemcpyKernelToUser((uintptr_t)batt, &k_batt, sizeof(k_batt));
-		return 0;
 	}
 
 	return ret;
+}
+
+static void patch_ctrl_data_ds5(const struct ds5_input_report *ds5, SceCtrlData *pad_data, int port, int logic, int triggers)
+{
+	signed char ldx, ldy, rdx, rdy;
+	unsigned int buttons = 0;
+
+	if (ds5->cross)
+		buttons |= SCE_CTRL_CROSS;
+	if (ds5->circle)
+		buttons |= SCE_CTRL_CIRCLE;
+	if (ds5->triangle)
+		buttons |= SCE_CTRL_TRIANGLE;
+	if (ds5->square)
+		buttons |= SCE_CTRL_SQUARE;
+
+	if (ds5->dpad == 0 || ds5->dpad == 1 || ds5->dpad == 7)
+		buttons |= SCE_CTRL_UP;
+	if (ds5->dpad == 1 || ds5->dpad == 2 || ds5->dpad == 3)
+		buttons |= SCE_CTRL_RIGHT;
+	if (ds5->dpad == 3 || ds5->dpad == 4 || ds5->dpad == 5)
+		buttons |= SCE_CTRL_DOWN;
+	if (ds5->dpad == 5 || ds5->dpad == 6 || ds5->dpad == 7)
+		buttons |= SCE_CTRL_LEFT;
+
+	if (triggers == TRIGGERS_EXT){
+		if (ds5->l1)
+			buttons |= SCE_CTRL_L1;
+		if (ds5->r1)
+			buttons |= SCE_CTRL_R1;
+
+		if (ds5->l2)
+			buttons |= SCE_CTRL_LTRIGGER;
+		if (ds5->r2)
+			buttons |= SCE_CTRL_RTRIGGER;
+
+		if (ds5->l3)
+			buttons |= SCE_CTRL_L3;
+		if (ds5->r3)
+			buttons |= SCE_CTRL_R3;
+
+		if (ds5->l_trigger > DS5_TRIGGER_THRESHOLD)
+			pad_data->lt = ds5->l_trigger;
+		if (ds5->r_trigger > DS5_TRIGGER_THRESHOLD)
+			pad_data->rt = ds5->r_trigger;
+	} else {
+		if (ds5->l1)
+			buttons |= SCE_CTRL_LTRIGGER;
+		if (ds5->r1)
+			buttons |= SCE_CTRL_RTRIGGER;
+		
+		if (c_isExtAll){
+			if (ds5->l2)
+				buttons |= SCE_CTRL_L1;
+			if (ds5->r2)
+				buttons |= SCE_CTRL_R1;
+
+			if (ds5->l3)
+				buttons |= SCE_CTRL_L3;
+			if (ds5->r3)
+				buttons |= SCE_CTRL_R3;
+		}
+	}
+
+	if (ds5->share)
+		buttons |= SCE_CTRL_SELECT;
+	if (ds5->options)
+		buttons |= SCE_CTRL_START;
+	
+	if (c_isExtAll){
+		if (ds5->tpad)
+			buttons |= SCE_CTRL_TOUCHPAD;
+	}
+
+	ldx = ds5->left_x - 127;
+	ldy = ds5->left_y - 127;
+	rdx = ds5->right_x - 127;
+	rdy = ds5->right_y - 127;
+
+	if (port != 0)
+		pad_data->lx = pad_data->ly = pad_data->rx = pad_data->ry = 127;
+
+	pad_data->lx = clamp(pad_data->lx + ds5->left_x - 127, 0, 255);
+	pad_data->ly = clamp(pad_data->ly + ds5->left_y - 127, 0, 255);
+
+	pad_data->rx = clamp(pad_data->rx + ds5->right_x - 127, 0, 255);
+	pad_data->ry = clamp(pad_data->ry + ds5->right_y - 127, 0, 255);
+
+	if (ds5->ps)
+		ksceCtrlSetButtonEmulation(0, 0, 0, SCE_CTRL_INTERCEPTED, 16);
+
+	if (buttons != 0 || 
+		sqrtf(ldx * ldx + ldy * ldy) > DS5_JOYSTICK_THRESHOLD ||
+		sqrtf(rdx * rdx + rdy * rdy) > DS5_JOYSTICK_THRESHOLD ||
+		ds5->l_trigger > DS5_TRIGGER_THRESHOLD ||
+		ds5->r_trigger > DS5_TRIGGER_THRESHOLD)
+		ksceKernelPowerTick(0);
+
+	if (logic == LOGIC_NEGATIVE)
+		pad_data->buttons = 0xFFFFFFFF - pad_data->buttons;
+	if (port != 0)
+		pad_data->buttons = 0;
+
+	pad_data->buttons |= buttons;
+	
+	if (logic == LOGIC_NEGATIVE)
+		pad_data->buttons = 0xFFFFFFFF - pad_data->buttons;
 }
 
 static void patch_ctrl_data_ds4(const struct ds4_input_report *ds4, SceCtrlData *pad_data, int port, int logic, int triggers)
@@ -703,10 +992,12 @@ static void patch_ctrl_data_all(const struct ControllerStats* controller,
 {
 	unsigned int i;
 	for (i = 0; i < count; i++) {
-		if (controller->type == SCE_CTRL_TYPE_DS4)
-			patch_ctrl_data_ds4(&controller->report_ds4, pad_data, port, logic, triggers);
-		else 
+		if (controller->type == SCE_CTRL_TYPE_DS3)
 			patch_ctrl_data_ds3(&controller->report_ds3, pad_data, port, logic, triggers);
+		else if (controller->type == SCE_CTRL_TYPE_DS4)
+			patch_ctrl_data_ds4(&controller->report_ds4, pad_data, port, logic, triggers);
+		else
+			patch_ctrl_data_ds5(&controller->report_ds5, pad_data, port, logic, triggers);
 		pad_data++;
 	}
 }
@@ -746,8 +1037,48 @@ static int rescaleTouchCoordinate(int ds4coord, int ds4size, int ds4dead, int vi
 	return clamp(((ds4coord - ds4dead) * vitasize) / (ds4size - ds4dead * 2), 0, vitasize - 1);
 }
 
-static void patch_touch_data(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs,
-			    struct ds4_input_report *ds4)
+static void patch_touch_data_ds5(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, const struct ds5_input_report *ds5)
+{
+	unsigned int i;
+
+	if (port != SCE_TOUCH_PORT_FRONT)
+		return;
+
+	for (i = 0; i < nBufs; i++) {
+		unsigned int num_reports = 0;
+
+		// If finger1 present, add finger1 as report 0
+		if (!ds5->finger1_activelow) {
+			pData[i].report[0].id = ds5->finger1_id;
+			pData[i].report[0].x = rescaleTouchCoordinate(ds5->finger1_x, DS5_TOUCHPAD_W, DS5_TOUCHPAD_W_DEAD, VITA_FRONT_TOUCHSCREEN_W);
+			pData[i].report[0].y = rescaleTouchCoordinate(ds5->finger1_y, DS5_TOUCHPAD_H, DS5_TOUCHPAD_H_DEAD, VITA_FRONT_TOUCHSCREEN_H);
+			num_reports++;
+		}
+
+		// If only finger2 is present, add finger2 as report 0
+		if (!ds5->finger2_activelow && ds5->finger1_activelow) {
+			pData[i].report[0].id = ds5->finger2_id;
+			pData[i].report[0].x = rescaleTouchCoordinate(ds5->finger2_x, DS5_TOUCHPAD_W, DS5_TOUCHPAD_W_DEAD, VITA_FRONT_TOUCHSCREEN_W);
+			pData[i].report[0].y = rescaleTouchCoordinate(ds5->finger2_y, DS5_TOUCHPAD_H, DS5_TOUCHPAD_H_DEAD, VITA_FRONT_TOUCHSCREEN_H);
+			num_reports++;
+		}
+
+		// If both finger1 and finger2 present, add finger2 as report 1
+		if (!ds5->finger2_activelow && !ds5->finger1_activelow) {
+			pData[i].report[1].id = ds5->finger2_id;
+			pData[i].report[1].x = rescaleTouchCoordinate(ds5->finger2_x, DS5_TOUCHPAD_W, DS5_TOUCHPAD_W_DEAD, VITA_FRONT_TOUCHSCREEN_W);
+			pData[i].report[1].y = rescaleTouchCoordinate(ds5->finger2_y, DS5_TOUCHPAD_H, DS5_TOUCHPAD_H_DEAD, VITA_FRONT_TOUCHSCREEN_H);
+			num_reports++;
+		}
+
+		if (num_reports > 0) {
+			ksceKernelPowerTick(0);
+			pData[i].reportNum = num_reports;
+		}
+	}
+}
+
+static void patch_touch_data_ds4(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, const struct ds4_input_report *ds4)
 {
 	unsigned int i;
 
@@ -788,12 +1119,20 @@ static void patch_touch_data(SceUInt32 port, SceTouchData *pData, SceUInt32 nBuf
 	}
 }
 
+static void patch_touch_data_all(SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs, const struct ControllerStats* controller)
+{
+	if (controller->type == SCE_CTRL_TYPE_DS4)
+		patch_touch_data_ds4(port, pData, nBufs, &controller->report_ds4);
+	else if (controller->type == SCE_CTRL_TYPE_VIRT)
+		patch_touch_data_ds5(port, pData, nBufs, &controller->report_ds5);
+}
+
 DECL_FUNC_HOOK(SceTouch_ksceTouchPeek, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
 {
 	int ret = TAI_CONTINUE(int, SceTouch_ksceTouchPeek_ref, port, pData, nBufs);
 	
-	if (ret >= 0 && controllers[1].connected && controllers[1].type == SCE_CTRL_TYPE_DS4)
-		patch_touch_data(port, pData, nBufs, &controllers[1].report_ds4);
+	if (ret >= 0 && controllers[1].connected)
+		patch_touch_data_all(port, pData, nBufs, &controllers[1]);
 
 	return ret;
 }
@@ -802,8 +1141,8 @@ DECL_FUNC_HOOK(SceTouch_ksceTouchPeekRegion, SceUInt32 port, SceTouchData *pData
 {
 	int ret = TAI_CONTINUE(int, SceTouch_ksceTouchPeekRegion_ref, port, pData, nBufs, region);
 
-	if (ret >= 0 && controllers[1].connected && controllers[1].type == SCE_CTRL_TYPE_DS4)
-		patch_touch_data(port, pData, nBufs, &controllers[1].report_ds4);
+	if (ret >= 0 && controllers[1].connected)
+		patch_touch_data_all(port, pData, nBufs, &controllers[1]);
 
 	return ret;
 }
@@ -812,8 +1151,8 @@ DECL_FUNC_HOOK(SceTouch_ksceTouchRead, SceUInt32 port, SceTouchData *pData, SceU
 {
 	int ret = TAI_CONTINUE(int, SceTouch_ksceTouchRead_ref, port, pData, nBufs);
 
-	if (ret >= 0 && controllers[1].connected && controllers[1].type == SCE_CTRL_TYPE_DS4)
-		patch_touch_data(port, pData, nBufs, &controllers[1].report_ds4);
+	if (ret >= 0 && controllers[1].connected)
+		patch_touch_data_all(port, pData, nBufs, &controllers[1]);
 
 	return ret;
 }
@@ -822,13 +1161,25 @@ DECL_FUNC_HOOK(SceTouch_ksceTouchReadRegion, SceUInt32 port, SceTouchData *pData
 {
 	int ret = TAI_CONTINUE(int, SceTouch_ksceTouchReadRegion_ref, port, pData, nBufs, region);
 
-	if (ret >= 0 && controllers[1].connected && controllers[1].type == SCE_CTRL_TYPE_DS4)
-		patch_touch_data(port, pData, nBufs, &controllers[1].report_ds4);
+	if (ret >= 0 && controllers[1].connected)
+		patch_touch_data_all(port, pData, nBufs, &controllers[1]);
 
 	return ret;
 }
 
-static void patch_motion_state(SceMotionState *motionState, struct ds4_input_report *ds4)
+static void patch_motion_state_ds5(SceMotionState *motionState, struct ds5_input_report *ds5)
+{
+	SceMotionState k_data;
+	SceMotionState *u_data = motionState;
+
+	ksceKernelMemcpyUserToKernel(&k_data, (uintptr_t)u_data, sizeof(k_data));
+	k_data.acceleration.x = ds5->accel_x;
+	k_data.acceleration.y = ds5->accel_y;
+	k_data.acceleration.z = ds5->accel_z;
+	ksceKernelMemcpyKernelToUser((uintptr_t)u_data, &k_data, sizeof(k_data));
+}
+
+static void patch_motion_state_ds4(SceMotionState *motionState, struct ds4_input_report *ds4)
 {
 	SceMotionState k_data;
 	SceMotionState *u_data = motionState;
@@ -836,7 +1187,7 @@ static void patch_motion_state(SceMotionState *motionState, struct ds4_input_rep
 	ksceKernelMemcpyUserToKernel(&k_data, (uintptr_t)u_data, sizeof(k_data));
 	k_data.acceleration.x = ds4->accel_x;
 	k_data.acceleration.y = ds4->accel_y;
-	k_data.acceleration.y = ds4->accel_z;
+	k_data.acceleration.z = ds4->accel_z;
 	ksceKernelMemcpyKernelToUser((uintptr_t)u_data, &k_data, sizeof(k_data));
 }
 
@@ -844,8 +1195,12 @@ DECL_FUNC_HOOK(SceMotion_sceMotionGetState, SceMotionState *motionState)
 {
 	int ret = TAI_CONTINUE(int, SceMotion_sceMotionGetState_ref, motionState);
 
-	if (ret >= 0 && controllers[1].connected && controllers[1].type == SCE_CTRL_TYPE_DS4)
-		patch_motion_state(motionState, &controllers[1].report_ds4);
+	if (ret >= 0 && controllers[1].connected) {
+		if (controllers[1].type == SCE_CTRL_TYPE_DS4)
+			patch_motion_state_ds4(motionState, &controllers[1].report_ds4);
+		else if (controllers[1].type == SCE_CTRL_TYPE_VIRT)
+			patch_motion_state_ds5(motionState, &controllers[1].report_ds5);
+	}
 
 	return ret;
 }
@@ -873,7 +1228,7 @@ DECL_FUNC_HOOK(SceBt_sub_22999C8, void *dev_base_ptr, int r1)
 		const void *dev_info = *(const void **)(dev_base_ptr + 0x14A4);
 		const unsigned short *vid_pid = (const unsigned short *)(dev_info + 0x28);
 
-		if (is_ds4(vid_pid)) {
+		if (is_ds4(vid_pid) || is_ds5(vid_pid)) {
 			unsigned int *v8_ptr = (unsigned int *)(*(unsigned int *)dev_base_ptr + 8);
 
 			/*
@@ -985,14 +1340,22 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 			result1 = ksceBtGetVidPid(hid_event.mac0, hid_event.mac1, vid_pid);
 			result2 = ksceBtGetDeviceName(hid_event.mac0, hid_event.mac1, name);
 
-			if (is_ds4(vid_pid)) {
+			if (is_ds5(vid_pid)) {
+				ds5_input_reset(controller);
+				controller->mac0 = hid_event.mac0;
+				controller->mac1 = hid_event.mac1;
+				controller->connected = 1;
+				controller->type = SCE_CTRL_TYPE_VIRT; // What should this be?
+				ds5_send_0x31_report(hid_event.mac0, hid_event.mac1);
+				LOG("     CONNECTED DS5[%08X %08X] TO PORT %i\n", hid_event.mac0, hid_event.mac1, port);
+			} else if (is_ds4(vid_pid)) {
 				ds4_input_reset(controller);
 				controller->mac0 = hid_event.mac0;
 				controller->mac1 = hid_event.mac1;
 				controller->connected = 1;
 				controller->type = SCE_CTRL_TYPE_DS4;
 				ds4_send_0x11_report(hid_event.mac0, hid_event.mac1);
-				LOG("     CONNECTED DS3[%08X %08X] TO PORT %i\n", hid_event.mac0, hid_event.mac1, port);
+				LOG("     CONNECTED DS4[%08X %08X] TO PORT %i\n", hid_event.mac0, hid_event.mac1, port);
 			} else if (is_ds3(vid_pid) || (result1 == 0x802F5001 &&
 			    	result2 == 0x802F0C01)){
 				controller->mac0 = hid_event.mac0;
@@ -1000,7 +1363,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 				controller->connected = 1;
 				controller->type = SCE_CTRL_TYPE_DS3;
 				ds3_set_operational(hid_event.mac0, hid_event.mac1);
-				LOG("     CONNECTED DS4[%08X %08X] TO PORT %i\n", hid_event.mac0, hid_event.mac1, port);
+				LOG("     CONNECTED DS3[%08X %08X] TO PORT %i\n", hid_event.mac0, hid_event.mac1, port);
 			}
 			break;
 		}
@@ -1009,10 +1372,12 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 			controller->connected = 0;
 			controller->mac0 = 0;
 			controller->mac1 = 0;
-			if (controller->type == SCE_CTRL_TYPE_DS4)
-				ds4_input_reset(controller);
-			else 
+			if (controller->type == SCE_CTRL_TYPE_DS3)
 				ds3_input_reset(controller);
+			else if (controller->type == SCE_CTRL_TYPE_DS4)
+				ds4_input_reset(controller);
+			else
+				ds5_input_reset(controller);
 			controller->type = 0;
 			break;
 
@@ -1036,12 +1401,17 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 			switch (recv_buff[0]) {
 			case 0x01:
 				/*
-				 * Save DS3 state to a global variable.
+				 * Save DS3/DS5 state to a global variable.
 				 */
-				if (!controller->connected || !(controller->type == SCE_CTRL_TYPE_DS3))
+				if (!controller->connected)
 					break;
 
-				memcpy(&controller->report_ds3, recv_buff, sizeof(controller->report_ds3));
+				if (controller->type == SCE_CTRL_TYPE_DS3)
+					memcpy(&controller->report_ds3, recv_buff, sizeof(controller->report_ds3));
+				else if (controller->type == SCE_CTRL_TYPE_VIRT)
+					memcpy(&controller->report_ds5, recv_buff, sizeof(controller->report_ds5));
+				else
+					break;
 
 				enqueue_read_request(hid_event.mac0, hid_event.mac1,
 					&hid_request, recv_buff, sizeof(recv_buff));
@@ -1054,6 +1424,18 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 					break;
 
 				memcpy(&controller->report_ds4, recv_buff, sizeof(controller->report_ds4));
+
+				enqueue_read_request(hid_event.mac0, hid_event.mac1,
+					&hid_request, recv_buff, sizeof(recv_buff));
+				break;
+			case 0x31:
+				/*
+				 * Save DS5 state to a global variable.
+				 */
+				if (!controller->connected || !(controller->type == SCE_CTRL_TYPE_VIRT))
+					break;
+
+				memcpy(&controller->report_ds5, recv_buff, sizeof(controller->report_ds5));
 
 				enqueue_read_request(hid_event.mac0, hid_event.mac1,
 					&hid_request, recv_buff, sizeof(recv_buff));
@@ -1195,7 +1577,6 @@ int module_start(SceSize argc, const void *args)
 	opt.uselock = 0x100;
 	opt.field_8 = 0x10000;
 	opt.field_C = 0;
-	opt.field_10 = 0;
 	opt.field_14 = 0;
 	opt.field_18 = 0;
 
