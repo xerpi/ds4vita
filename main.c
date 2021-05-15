@@ -248,7 +248,7 @@ struct ds5_input_report {
 
 	unsigned char ps   : 1;
 	unsigned char tpad : 1;
-	unsigned char cnt2 : 6;
+	unsigned char cnt2 : 1;
 
 	unsigned char unk1[5];
 
@@ -290,7 +290,8 @@ enum{
 };
 
 typedef enum SceCtrlButtonsExt {
-    SCE_CTRL_TOUCHPAD    = 0x04000000             //!< Dualshock 4 Touchpad button
+    SCE_CTRL_TOUCHPAD    = 0x04000000,             //!< Dualshock 4 Touchpad button
+	SCE_CTRL_MIC         = 0x08000000              //!< DualSense Mic button
 } SceCtrlButtonsExt;
 
 // Config
@@ -668,7 +669,7 @@ static void patch_ctrl_data_ds5(const struct ds5_input_report *ds5, SceCtrlData 
 {
 	signed char ldx, ldy, rdx, rdy;
 	unsigned int buttons = 0;
-
+	
 	if (ds5->cross)
 		buttons |= SCE_CTRL_CROSS;
 	if (ds5->circle)
@@ -731,9 +732,11 @@ static void patch_ctrl_data_ds5(const struct ds5_input_report *ds5, SceCtrlData 
 	if (ds5->options)
 		buttons |= SCE_CTRL_START;
 	
-	if (c_isExtAll){
+	if (triggers == TRIGGERS_EXT){
 		if (ds5->tpad)
 			buttons |= SCE_CTRL_TOUCHPAD;
+		if (ds5->cnt2)
+			buttons |= SCE_CTRL_MIC;
 	}
 
 	ldx = ds5->left_x - 127;
@@ -839,7 +842,7 @@ static void patch_ctrl_data_ds4(const struct ds4_input_report *ds4, SceCtrlData 
 	if (ds4->options)
 		buttons |= SCE_CTRL_START;
 	
-	if (c_isExtAll){
+	if (triggers == TRIGGERS_EXT){
 		if (ds4->tpad)
 			buttons |= SCE_CTRL_TOUCHPAD;
 	}
@@ -1278,20 +1281,20 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 			break;
 		}
 
-		LOG("\n");
+		/*LOG("\n");
 		LOG("->Event:");
 		LOGF("%02X: ", hid_event.id);
 		for (int i = 0; i < 0x10; i++)
 			LOGF(" %02X", hid_event.data[i]);
-		LOGF("\n");
+		LOGF("\n");*/
 
 		ControllerStats *controller = NULL;
 		// Find connected controllers with same mac
 		for (int i = 0; i < VITA_PORTS_NUM; i++){
 			if (controllers[i].connected && controllers[i].mac0 == hid_event.mac0 && controllers[i].mac1 == hid_event.mac1){
 				controller = &controllers[i];
-				LOG("[%08X, %08X]>[%08X, %08X] Using controller from port %i\n", 
-					controllers[i].mac0, controllers[i].mac1, hid_event.mac0, hid_event.mac1, i);
+				/*LOG("[%08X, %08X]>[%08X, %08X] Using controller from port %i\n", 
+					controllers[i].mac0, controllers[i].mac1, hid_event.mac0, hid_event.mac1, i);*/
 			}
 		}
 		// Find free port
@@ -1302,8 +1305,8 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 				LOG("No free ports \n");
 				continue;
 			}
-			LOG("[%08X, %08X]>[%08X, %08X] Using free port %i\n", 
-				controllers[port].mac0, controllers[port].mac1, hid_event.mac0, hid_event.mac1, port);
+			/*LOG("[%08X, %08X]>[%08X, %08X] Using free port %i\n", 
+				controllers[port].mac0, controllers[port].mac1, hid_event.mac0, hid_event.mac1, port);*/
 			controller = &controllers[port];
 		}
 
@@ -1396,7 +1399,7 @@ static int bt_cb_func(int notifyId, int notifyCount, int notifyArg, void *common
 
 		case 0x0A: /* HID reply to 0-type request */
 
-			LOG("0x0A event: 0x%02X\n", recv_buff[0]);
+			/*LOG("0x0A event: 0x%02X\n", recv_buff[0]);*/
 
 			switch (recv_buff[0]) {
 			case 0x01:
