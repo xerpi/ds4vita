@@ -1,0 +1,17 @@
+ds34vita:
+  attributes: 0
+  version:
+    major: 1
+    minor: 1
+  main:
+    start: module_start
+    stop: module_stop
+  modules:
+    ds34vitaKernelLib:
+      syscall: true
+      functions:
+        - ds34vita_getIsExtAll
+        - ds34vita_setIsExtAll
+        - ds34vita_getIsPort1Allowed
+        - ds34vita_setIsPort1Allowed
+

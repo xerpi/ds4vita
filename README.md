@@ -1,23 +1,43 @@
-# ds4vita
+#  ds34vita v1.1
+- Combines functionality of [xerpi](https://github.com/xerpi "xerpi")'s [ds4vita](https://github.com/xerpi/ds4vita "ds4vita") and [ds3vita](https://github.com/xerpi/ds3vita "ds4vita").
+- Includes DualSense support (by [Hydr8gon](https://github.com/Hydr8gon))
+- Alows to use up to two controllers at the same time.
+- Has proper (PS TV way) buttons mapping.
+- Fixed no-sleep bug
+- Fixed multitouch issues
+- Added deadzone for touchpanel (same as PS TV)
+- Allows [reVita](https://github.com/MERLev/reVita "reVita") integration.
 
-**Download**: https://github.com/xerpi/ds4vita/releases
+### Install
+1. Copy **ds34vita.skprx** to *ur0:/tai/* folder
+2. Add **ds34vita.skprx** to taiHEN's config (*ur0:/tai/config.txt*) under **KERNEL** section:
+```
+*KERNEL
+ur0:tai/ds34vita.skprx
+```
 
-**Enable the plugin:**
+### Download: 
+https://github.com/MERLev/ds34vita/releases
 
-1. Add ds4vita.skprx to taiHEN's config (ux0:/tai/config.txt):
-	```
-	*KERNEL
-	ux0:tai/ds4vita.skprx
-	```
-2. You need to refresh the config.txt by rebooting or through VitaShell.
+### Build
+```bash
+mkdir build
+cd build
+cmake ..
+make
+```
 
-**Using it for the first time (pairing the controller):**
+### Build as dependency
+```bash
+mkdir build
+cd build
+cmake ..
+make install
+```
+**ds34vita-weak.yml** is used to create "weak" stubs for kernel.
 
-1. Go to Settings -> Devices -> Bluetooth Devices
-2. Press SHARE+PS on the DS4 for about 3-4 seconds, until the lightbar blinks very quickly
-3. The DS4 will then connect and be paired (don't press over it when it appears)
-
-**Using it once paired (see above):**
-1. Just press the PS button and it will connect to the Vita
-
-**Note**: If you use Mai, don't put the plugin inside ux0:/plugins because Mai will load all stuff you put in there...
+### Credits
+Based on [ds4vita](https://github.com/xerpi/ds4vita "ds4vita code") by [xerpi](https://github.com/xerpi "xerpi")\
+Based on [ds3vita](https://github.com/xerpi/ds3vita "ds3vita code") by [xerpi](https://github.com/xerpi "xerpi")\
+DusalSense support - [Hydr8gon](https://github.com/Hydr8gon)\
+All testing done by [bosshunter](https://github.com/bosshunter)
