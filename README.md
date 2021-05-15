@@ -1,5 +1,6 @@
-#  ds34vita
+#  ds34vita v1.1
 - Combines functionality of [xerpi](https://github.com/xerpi "xerpi")'s [ds4vita](https://github.com/xerpi/ds4vita "ds4vita") and [ds3vita](https://github.com/xerpi/ds3vita "ds4vita").
+- Includes DualSense support (by [Hydr8gon](https://github.com/Hydr8gon))
 - Alows to use up to two controllers at the same time.
 - Has proper (PS TV way) buttons mapping.
 - Fixed no-sleep bug
@@ -38,4 +39,5 @@ make install
 ### Credits
 Based on [ds4vita](https://github.com/xerpi/ds4vita "ds4vita code") by [xerpi](https://github.com/xerpi "xerpi")\
 Based on [ds3vita](https://github.com/xerpi/ds3vita "ds3vita code") by [xerpi](https://github.com/xerpi "xerpi")\
+DusalSense support - [Hydr8gon](https://github.com/Hydr8gon)\
 All testing done by [bosshunter](https://github.com/bosshunter)
